@@ -1,0 +1,35 @@
+{
+  "date": "2026-11-05",
+  "python": "3.11.9",
+  "checks": {
+    "lint": true,
+    "typecheck": true,
+    "build": true,
+    "mypyFiles": 25,
+    "vitestPassed": 243,
+    "pytestCollected": 142,
+    "pytestPassed": 134,
+    "pytestSkipped": 8,
+    "pytestWarnings": 1,
+    "e2ePassed": 16,
+    "e2eMinutes": 5.3
+  },
+  "production": {
+    "deployment": "local-production",
+    "provider": "fake",
+    "database": "isolated-sqlite",
+    "authCookie": "secure-httpOnly-strict-browser-verified",
+    "questions": 13,
+    "scoredQuestions": 8,
+    "dimensions": 4,
+    "evidence": "all-dimensions-cited",
+    "tokens": 5642,
+    "restart": "report-invitation-and-session-restored",
+    "deletion": "synthetic-candidate-erased"
+  },
+  "limitations": [
+    "Inherited Python3.11 package versions, not a full lock rebuild",
+    "PG16 and Docker not executed",
+    "pytest cache write permission warning retained"
+  ]
+}

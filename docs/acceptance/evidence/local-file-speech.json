@@ -1,0 +1,30 @@
+{
+  "date": "2026-11-05",
+  "kind": "explicit_manual_local_acceptance",
+  "syntheticSamplesOnly": true,
+  "pythonSocketConnectionsBlocked": true,
+  "model": "existing configured Whisper base weights",
+  "device": "cpu",
+  "ompNumThreads": 4,
+  "modelInitializationMs": 13227,
+  "versions": {
+    "python": "3.12.14",
+    "openai-whisper": "20250625",
+    "torch": "2.15.0+cpu",
+    "numpy": "2.4.6",
+    "python-dotenv": "1.2.4",
+    "imageio-ffmpeg": "0.8.1",
+    "ffmpeg": "9.0.2"
+  },
+  "ffmpegWheel": {
+    "platform": "win_amd64",
+    "bytes": 38893483,
+    "sha256": "f27ca4cb85e2d4946deedbce1a81245dfd942a2bcf94b53676fb3956aa95bf1b"
+  },
+  "samples": [
+    {"format": "wav", "durationMs": 7324, "sha256": "471a1b91660f07c8504563ff0438f31b2e192236b9f3c026cdfb85b0f2980b1a", "nonemptyTranscription": true},
+    {"format": "mp3", "durationMs": 2367, "sha256": "e8f1ecb746c6e559e9063935b1225f215c8d180c506bacd4edf739b3a5380bc0", "nonemptyTranscription": true}
+  ],
+  "edgeTts": {"installed": false, "enabled": false, "actualNetworkCallMade": false, "disabledReturn": null},
+  "limitations": ["Same sentence encoded twice, not a multi-sample CER benchmark", "Traditional Chinese output retained", "Not an end-to-end hardware acceptance"]
+}

@@ -1,0 +1,25 @@
+{
+  "python": "3.11.9",
+  "versions": {
+    "fastapi": "0.162.0",
+    "pydantic": "2.14.1",
+    "pydantic-core": "2.50.1",
+    "pytest": "9.1.1",
+    "anyio": "4.15.1",
+    "SQLAlchemy": "2.1.6",
+    "openai-whisper": "20250625",
+    "torch": "2.15.0",
+    "numpy": "2.4.6",
+    "python-dotenv": "1.2.4",
+    "networkx": "3.6.1",
+    "cryptography": "48.0.1",
+    "python-multipart": "0.0.33",
+    "psycopg": "3.3.7",
+    "psycopg-binary": "3.3.7",
+    "ruff": "0.17.3",
+    "mypy": "1.20.2"
+  },
+  "globalPackagesInherited": true,
+  "newWheelCount": 11,
+  "newWheelBytes": 29324820
+}

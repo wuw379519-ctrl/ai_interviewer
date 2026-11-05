@@ -1,0 +1,94 @@
+{
+  "python": "3.11.9",
+  "packages": [
+    {
+      "name": "python-multipart",
+      "version": "0.0.33",
+      "filename": "python_multipart-0.0.33-py3-none-any.whl",
+      "bytes": 32253,
+      "sha256": "8f16c07b36add9da6b2ee87d3efcaf0a45a6de9c3d0a5dd94e9ccf7675a7bc45",
+      "url": "https://files.pythonhosted.org/packages/dd/1b/6b1b4164ec734cac911460ab599bfbe46afedd42c5c9627fe4235942c314/python_multipart-0.0.33-py3-none-any.whl"
+    },
+    {
+      "name": "psycopg",
+      "version": "3.3.7",
+      "filename": "psycopg-3.3.7-py3-none-any.whl",
+      "bytes": 216207,
+      "sha256": "d592e88a077e01ff57f22d59f16e828b92f2b2d9f439b6679d582b48d74cf306",
+      "url": "https://files.pythonhosted.org/packages/b0/2a/2e05cc01b2817b8baff419823774bb928efd0a36de12da78f19482cfa329/psycopg-3.3.7-py3-none-any.whl"
+    },
+    {
+      "name": "psycopg-binary",
+      "version": "3.3.7",
+      "filename": "psycopg_binary-3.3.7-cp311-cp311-win_amd64.whl",
+      "bytes": 3636509,
+      "sha256": "cb6fe750879c781d3d3667b6d0f66318071d0245e60b51ad9a00186708978089",
+      "url": "https://files.pythonhosted.org/packages/80/95/559b7910fe35a5f63adc7425bcad46c85ee10880dae8096b7789ea6d75ac/psycopg_binary-3.3.7-cp311-cp311-win_amd64.whl"
+    },
+    {
+      "name": "cryptography",
+      "version": "48.0.1",
+      "filename": "cryptography-48.0.1-cp311-abi3-win_amd64.whl",
+      "bytes": 3817138,
+      "sha256": "39489bfca54c7a1f6b297efcd8bc608ab92d16c4ca631b0cad4da46724588b24",
+      "url": "https://files.pythonhosted.org/packages/c5/69/0572c77dbace6fef72f33755bd52ea399c71367250d366237f8691826b9e/cryptography-48.0.1-cp311-abi3-win_amd64.whl"
+    },
+    {
+      "name": "ruff",
+      "version": "0.17.3",
+      "filename": "ruff-0.17.3-py3-none-win_amd64.whl",
+      "bytes": 10341333,
+      "sha256": "56b8ffb3f3b3cbccb8b76b71b38261b7ed982ef5d20f5b447b1b61a7f4949b24",
+      "url": "https://files.pythonhosted.org/packages/d0/a0/f08c1631bfd81faa6a90eaf70c37c786c11bed2046302b56bb506c25e1a0/ruff-0.17.3-py3-none-win_amd64.whl"
+    },
+    {
+      "name": "mypy",
+      "version": "1.20.2",
+      "filename": "mypy-1.20.2-cp311-cp311-win_amd64.whl",
+      "bytes": 10846300,
+      "sha256": "baf593f2765fa3a6b1ef95807dbaa3d25b594f6a52adcc506a6b9cb115e1be67",
+      "url": "https://files.pythonhosted.org/packages/37/52/10a1ddf91b40f843943a3c6db51e2df59c9e237f29d355e95eaab427461f/mypy-1.20.2-cp311-cp311-win_amd64.whl"
+    },
+    {
+      "name": "cffi",
+      "version": "2.1.1",
+      "filename": "cffi-2.1.1-cp311-cp311-win_amd64.whl",
+      "bytes": 185096,
+      "sha256": "42f6930c31dc7f50732c9ae793c2786c7b6b044195967bbdde40bb9be81c4cc0",
+      "url": "https://files.pythonhosted.org/packages/73/c0/77ba02423c2f7d7091143c45cd49e0e6575c4c1967394bb542bd923a9b74/cffi-2.1.1-cp311-cp311-win_amd64.whl"
+    },
+    {
+      "name": "mypy-extensions",
+      "version": "1.1.0",
+      "filename": "mypy_extensions-1.1.0-py3-none-any.whl",
+      "bytes": 4963,
+      "sha256": "1be4cccdb0f2482337c4743e60421de3a356cd97508abadd57d47403e94f5505",
+      "url": "https://files.pythonhosted.org/packages/79/7b/2c79738432f5c924bef5071f933bcc9efd0473bac3b4aa584a6f7c1c8df8/mypy_extensions-1.1.0-py3-none-any.whl"
+    },
+    {
+      "name": "pathspec",
+      "version": "1.1.1",
+      "filename": "pathspec-1.1.1-py3-none-any.whl",
+      "bytes": 57328,
+      "sha256": "a00ce642f577bf7f473932318056212bc4f8bfdf53128c78bbd5af0b9b20b189",
+      "url": "https://files.pythonhosted.org/packages/f1/d9/7fb5aa316bc299258e68c73ba3bddbc499654a07f151cba08f6153988714/pathspec-1.1.1-py3-none-any.whl"
+    },
+    {
+      "name": "librt",
+      "version": "0.16.0",
+      "filename": "librt-0.16.0-cp311-cp311-win_amd64.whl",
+      "bytes": 125093,
+      "sha256": "5f49cff01bd608ef7d97104cb035c75455e79c2d70bf4a506cf773338ac1860d",
+      "url": "https://files.pythonhosted.org/packages/d1/38/c892383d2bb1a6a80b2ec8ede84970a265a792c56614a06282bf3008517c/librt-0.16.0-cp311-cp311-win_amd64.whl"
+    },
+    {
+      "name": "pycparser",
+      "version": "3.12",
+      "filename": "pycparser-3.12-py3-none-any.whl",
+      "bytes": 62600,
+      "sha256": "a076f3f489b39b43ed13563a1dafe42447445bec2e294154ec5c57fcdda4c85e",
+      "url": "https://files.pythonhosted.org/packages/b6/ae/315bbeee126a769cbde43cf4908acb4b40408d8bf8bbf334dd7368d8dadf/pycparser-3.12-py3-none-any.whl"
+    }
+  ],
+  "totalBytes": 29324820
+}
