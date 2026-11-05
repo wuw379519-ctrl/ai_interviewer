@@ -38,7 +38,12 @@ def local_audio_path(value: str) -> Path | None:
 def main() -> None:
     sys.path.insert(0, str(ROOT / "apps/api"))
     from interviewer.errors import DomainError
-    from interviewer.llm_service import MAX_CHAT_MESSAGE_CHARS, ChatConfig, InterviewConversation, LLMService
+    from interviewer.llm_service import (
+        MAX_CHAT_MESSAGE_CHARS,
+        ChatConfig,
+        InterviewConversation,
+        LLMService,
+    )
     from interviewer.stt_service import transcribe_audio
 
     parser = argparse.ArgumentParser(description="用本地音频文件或文字完成终端面试练习。")
