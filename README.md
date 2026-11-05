@@ -4,10 +4,10 @@ FastAPI 后端和终端面试工具，可运行结构化面试、证据评分、
 
 ## 在本机启动
 
-以下命令在本目录运行。复用本机已就绪的 Python 3.11 环境。
+以下命令在本目录运行。使用本仓库自带的 Python 3.11 环境，不引用其他仓库或目录。
 
 ```powershell
-$py = 'D:\work\ai_interviewer\.venv311\Scripts\python.exe'
+$py = '.\.venv\Scripts\python.exe'
 $env:PYTHONPATH = 'apps/api'
 & $py --version
 & $py -m interviewer.cli migrate
@@ -33,21 +33,40 @@ $env:PYTHONPATH = 'apps/api'
 
 输入 `yes` 同意后开始，输入 `/exit` 退出。每轮最多 4000 字。语音脚本也接受本地音频路径，使用 `STT_MODEL_PATH` 指定已有 `base.pt`。其他音频编码可用 `FFMPEG_PATH` 指定现有 FFmpeg。可选语音依赖见 `apps/api/requirements-whisper.txt`；Python 3.11 额外应用 `apps/api/constraints-python311.txt`。`STT_INITIAL_PROMPT` 可以提示模型偏向简体。`--real` 仅用于明确获准的模型端点，模型参数见 `.env.example`。
 
-### 从原仓库沿用语音配置
+### 本地语音资产
 
-音频模式需要可用的本地 Whisper 环境和权重。先确认下列绝对路径的文件存在，再将配置合并进本目录的 `.env`。首次配置时从 `.env.example` 创建 `.env`。已有配置时只补齐或核对所列字段。
+音频模式需要可用的本地 Whisper 环境和权重。权重与 FFmpeg 都放在本仓库内，仓库外不需要任何文件。按下列目录放置（两者都被 Git 忽略，不会提交）：
+
+| 文件 | 位置 | 来源 |
+| --- | --- | --- |
+| Whisper 权重 | `.data/models/whisper/base.pt` | 复用已有 `base.pt`，或按 openai-whisper 官方说明离线获取 |
+| FFmpeg | `.data/tools/ffmpeg.exe` | 复用已有 `ffmpeg.exe`，或把任意 FFmpeg 放进该路径 |
+
+```powershell
+New-Item -ItemType Directory -Force -Path .data\models\whisper, .data\tools | Out-Null
+Copy-Item <已有 base.pt> .data\models\whisper\base.pt
+Copy-Item <已有 ffmpeg.exe> .data\tools\ffmpeg.exe
+```
+
+首次配置时从 `.env.example` 创建 `.env`。两个语音资产的相对路径均按仓库根解析，启动工作目录可以不同。也可填写绝对路径或用 `~` 指向用户主目录。
 
 ```dotenv
 STT_PROVIDER=whisper
 STT_MODEL=base
 STT_DEVICE=cpu
 STT_LANGUAGE=zh
-STT_MODEL_PATH=D:/work/ai_interviewer/.data/models/whisper/base.pt
+STT_MODEL_PATH=.data/models/whisper/base.pt
 STT_MODEL_SHA256=ed3a0b6b1c0edf879ad9b11b1af5a0e6ab5db9205f891f668f8b0e6c6326e34e
-FFMPEG_PATH=D:/work/ai_interviewer/.venv/Lib/site-packages/imageio_ffmpeg/binaries/ffmpeg-win-x86_64-v9.0.2.exe
+FFMPEG_PATH=.data/tools/ffmpeg.exe
 ```
 
-路径变动时改为本机的实际文件位置。`.env` 由 Git 忽略。注入 `STT_MODEL_PATH` 和 `FFMPEG_PATH` 后的本地 Whisper 转写实测见 [R-python-01](docs/acceptance/R-python-01.md)。
+`STT_MODEL_SHA256` 可选，配置后启动时校验权重；不匹配会拒绝加载而不是自动下载。不需要本地语音时设 `STT_PROVIDER=auto` 并留空这两个路径即可，其余功能不受影响。`.env` 由 Git 忽略。注入 `STT_MODEL_PATH` 和 `FFMPEG_PATH` 后的本地 Whisper 转写实测见 [R-python-01](docs/acceptance/R-python-01.md)。
+
+### 网页语音联调
+
+在独立仓库启动 FastAPI，在原仓库启动 Next.js 网页。后端的 `APP_BASE_URL` 填浏览器实际访问的 origin，网页服务端的 `PYTHON_API_URL` 指向 FastAPI。使用 `LLM_PROVIDER=fake`、`STT_PROVIDER=whisper` 和 `TTS_PROVIDER=local`，从演示工作台创建语音邀请。候选页同意并授权麦克风后，点击开始和结束语音输入，核对草稿后再发送。题目播报需要浏览器可用的本地中文音色。
+
+已用本机 Python 3.11.9、Chromium 合成设备轨道和真实 Whisper base 跑通录音、转写、确认后提交、刷新恢复、评分报告及人工复核。物理麦克风、摄像头和实际播报声音需在使用设备上复测。详见 [D52](DECISIONS.md#d52-独立后端的网页语音联调)。
 
 ## Python 验证
 

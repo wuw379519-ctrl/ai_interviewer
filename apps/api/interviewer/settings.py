@@ -11,6 +11,12 @@ ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_APP_BASE_URL = "http://127.0.0.1:8000"
 
 
+def _repository_asset_path(value: str) -> str:
+    if not value or Path(value).is_absolute():
+        return value
+    return str((ROOT / Path(value).expanduser()).resolve())
+
+
 class Settings(BaseModel):
     database_url: str = ""
     sqlite_path: str = str(ROOT / ".data" / "python" / "interviews.sqlite3")
@@ -74,12 +80,13 @@ class Settings(BaseModel):
                    output_price=float(env["LLM_OUTPUT_COST_PER_1K"]) if env.get("LLM_OUTPUT_COST_PER_1K") else None,
                    stt_base_url=env.get("STT_BASE_URL", ""), stt_model=env.get("STT_MODEL", ""),
                    stt_key=env.get("STT_API_KEY", ""), stt_label=env.get("STT_PROCESSOR_LABEL", "企业配置的语音转写服务")[:100],
-                   stt_provider=cast(Literal["auto", "http", "whisper"], env.get("STT_PROVIDER", "auto")), stt_model_path=env.get("STT_MODEL_PATH", ""),
+                   stt_provider=cast(Literal["auto", "http", "whisper"], env.get("STT_PROVIDER", "auto")),
+                   stt_model_path=_repository_asset_path(env.get("STT_MODEL_PATH", "")),
                    stt_model_sha256=env.get("STT_MODEL_SHA256", ""), stt_device=env.get("STT_DEVICE", "cpu"),
                    stt_language=env.get("STT_LANGUAGE", "zh"), stt_timeout=float(env.get("STT_TIMEOUT", "60")),
                    stt_initial_prompt=env.get("STT_INITIAL_PROMPT", ""),
                    stt_max_concurrency=int(env.get("STT_MAX_CONCURRENCY", "1")),
-                   ffmpeg_path=env.get("FFMPEG_PATH", ""),
+                   ffmpeg_path=_repository_asset_path(env.get("FFMPEG_PATH", "")),
                    tts_provider=cast(Literal["local", "edge"], env.get("TTS_PROVIDER", "local")),
                    tts_allow_external=env.get("TTS_ALLOW_EXTERNAL") == "true", tts_voice=env.get("TTS_VOICE", ""),
                    tts_rate=env.get("TTS_RATE", "-5%"), tts_timeout=int(env.get("TTS_TIMEOUT", "30")),

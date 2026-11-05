@@ -525,3 +525,33 @@ ENABLE_EDGE_TTS只控制新tts_service便捷封装，默认false直接提示并�
 - 关闭依赖外部 CDN 的 Swagger 页面，保留 `/api/openapi.json`。
 - FastAPI 的 `app_base_url` 默认值改为 `http://127.0.0.1:8000`。
 - Web 和 Node 相关内容保留在原仓库。候选网页、招聘者工作台、摄像头界面与报告打印页仍由原仓库提供，本目录只提供 API 和 CLI。联用时将 `APP_BASE_URL` 设为浏览器页面的完整 origin。`auth.origin()` 校验 scheme 和端口，端口必须一致。除本地回环主机名的兼容规则外，主机名也必须匹配。
+
+## D52 独立后端的网页语音联调
+
+2026-11-05 在沙箱外用 Python 3.11.9 启动独立 FastAPI，复用原仓库已有 Next.js 构建和本机 Whisper base 权重。使用回环地址、临时 SQLite 和 fake LLM，TTS 保持本地模式。没有新增依赖或变更业务行为。
+
+Chromium 的文件模拟麦克风启动时报 `Not supported`，改为通过 Web Audio 注入同一段合成 WAV、用画布提供合成视频轨道。页面继续使用原有 `MediaRecorder`、WAV 转码和同源上传流程。6.54 秒音频在点击结束后约 4.24 秒返回转写。确认前无候选人答题轮次，确认后通过 SSE 推进，暂停刷新后恢复原题。报告生成了原文证据并完成复核。转写审计确认 `local_whisper`、`audioStored=false`、`previewStored=false`。自动验证用的进程及测试库已清理。
+
+本机三项 Python 门禁通过。Ruff 无错误，mypy 检查 29 个文件，pytest 184 通过、8 项 PostgreSQL 条件跳过。
+
+物理麦克风、摄像头和实际播报声音仍待本机手工复测。真实 LLM、Edge TTS、PostgreSQL 16、Docker 和托管 CI 均未纳入本次联调。
+
+## D53 语音资产与启动命令不再引用原仓库目录
+
+**状态**：已实施（2026-11-05）
+
+**背景**：`.env` 与 README 曾把 `STT_MODEL_PATH`、`FFMPEG_PATH` 和 `$py` 指向 `D:\work\ai_interviewer`。那是原 Next.js 仓库的目录，本仓库启动不该依赖它；而且 README 里的 `.venv311` 路径在本机已不存在。
+
+**做法**：把已有 `base.pt`（138.5 MiB，SHA-256 `ed3a0b…34e`，与 `.env` 记录一致）复制到 `.data/models/whisper/base.pt`，把 `ffmpeg-win-x86_64-v9.0.2.exe` 复制到 `.data/tools/ffmpeg.exe`；`.env` 改为本仓库路径，README 的启动命令改用 `.\.venv\Scripts\python.exe`，并新增「本地语音资产」放置说明。两个文件都落在已被 Git 忽略的 `.data/`，不进版本库，也没有新增 pip 依赖。原目录的文件保持原样，未删除未移动。
+
+**影响**：启动、转写和音频文件转码只读本目录。本仓库 `.venv` 仍是 `--system-site-packages` 环境，运行时依赖来自本机全局 Python 3.11 安装，与原仓库无关；换机器需按 README 重建虚拟环境。`STT_MODEL_PATH` 写相对路径时按进程工作目录解析，因此文档要求在本目录运行。
+
+**回退**：把 `.env` 两个路径改回原值，或设 `STT_PROVIDER=auto` 关闭本地语音。
+
+## D54 语音资产的相对路径以仓库根为准
+
+加载环境配置时统一解析 `STT_MODEL_PATH` 和 `FFMPEG_PATH`。相对路径以仓库根为基准并规范化，`~` 展开为用户主目录，绝对路径和空值原样保留。这样 IDE、服务和 CLI 可以在不同目录启动，也能共用随仓库移动的资产配置。`SQLITE_PATH` 和直接构造 `Settings` 的调用保持原语义。
+
+本机 Python 3.11.9 三项门禁通过，pytest 188 通过、8 项 PostgreSQL 条件跳过。从仓库根和 `C:\` 各启动一次 8010，均返回 `speech=server_configured`，仓库内 FFmpeg 9.0.2 在两个工作目录都可执行。验证使用内存 SQLite，完成后停止两个服务。
+
+可将两个环境变量改回绝对路径来回退配置。若回退本次实现，先恢复绝对路径，再恢复按进程工作目录解析的版本。
