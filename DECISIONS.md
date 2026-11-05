@@ -571,3 +571,9 @@ README 默认使用 `.venv-clean`。旧 `.venv` 保留，可切换 `$py` 回退�
 练习数据由独立的 SQLite / PostgreSQL 增量迁移保存。会话 90 天到期后无法读取，新建练习时清理已到期记录，也可用会话凭证立即删除。旧招聘快照格式继续使用固定表集。CORS 在开发模式仅允许 `http://localhost:5173`，练习接口在生产模式关闭。回退可撤销练习路由，已应用的增量迁移保留。
 
 后端里程碑在 Python 3.11.9 上通过 Ruff、mypy 和 pytest，193 通过、8 项 PostgreSQL 条件跳过。自动化测试使用 fake LLM 和替身转写。
+
+## D57 轻量练习页与浏览器联调
+
+`apps/web` 使用原生 HTML、CSS 和 Fetch，以 Python 标准库静态服务从 `http://localhost:5173` 访问，API 使用 `127.0.0.1:8010`。浏览器标签页仅保留会话凭证，历史由 API 返回。提交支持文字和音频文件，失败时保留当前输入和重试幂等键。可单独撤回页面改动，练习 API 可独立运行。
+
+最终版本在 `.venv-clean` 重跑三项 Python 门禁与 `node --check`，pytest 193 通过、8 跳过。Chromium 通过 CORS、知情同意、文字、合成 MP3、两轮上下文、刷新恢复、窄屏和删除检查。使用真实本机 Whisper 和 FFmpeg，第二轮上传至显示回复约 3.3 秒，LLM 使用 fake。本轮未调用真实模型端点，未执行 PostgreSQL 16、Docker 或托管 CI。

@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="description" content="用文字或本地音频文件进行 AI 技术面试练习。">
+  <title>面试练习室 · AI 技术面试官</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="./styles.css">
+  <script src="./app.js" type="module"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-icon" aria-hidden="true">问</span><span>面试练习室</span></div>
+    <span id="model-badge" class="badge" data-state="loading">连接中</span>
+  </header>
+
+  <main class="workspace">
+    <aside class="sidebar" aria-label="会话设置">
+      <p class="eyebrow">技术面试 · 练习模式</p>
+      <h1>说说你的项目</h1>
+      <p class="intro">用文字或音频文件作答，面试官会沿着你的回答继续追问。</p>
+      <section class="consent" aria-labelledby="consent-title">
+        <h2 id="consent-title">知情说明</h2>
+        <p id="consent-copy">正在读取本次练习的处理方式。</p>
+        <p id="consent-version" class="version"></p>
+        <form id="consent-form">
+          <label class="check"><input id="accept" type="checkbox" required disabled> <span>我已阅读并同意本次练习说明</span></label>
+          <button id="start" class="button primary" type="submit" disabled>开始练习</button>
+        </form>
+        <p id="active-note" class="active-note" hidden>已同意 · 刷新可继续当前对话</p>
+      </section>
+      <button id="erase" class="button subtle" type="button" hidden>删除本次会话</button>
+    </aside>
+
+    <section class="chat" aria-labelledby="chat-title">
+      <header class="chat-header">
+        <div class="interviewer-icon" aria-hidden="true">AI</div>
+        <div><h2 id="chat-title">AI 技术面试官</h2><p id="round-count">0 轮对话</p></div>
+      </header>
+      <div id="conversation" class="conversation" role="log" aria-label="对话记录" tabindex="0"></div>
+      <div class="composer">
+        <p id="feedback" class="feedback" role="status" aria-live="polite">连接中，请稍候。</p>
+        <form id="answer-form">
+          <fieldset id="answer-fields" disabled>
+            <legend class="sr-only">提交候选人回答</legend>
+            <label for="answer" class="input-label">文字回答</label>
+            <textarea id="answer" rows="3" maxlength="4000" placeholder="例如，我负责实现了项目中的缓存模块…" aria-describedby="input-hint"></textarea>
+            <div class="composer-actions">
+              <div class="upload">
+                <label for="audio" class="input-label">或上传音频文件</label>
+                <input id="audio" type="file" accept="audio/*,.wav,.mp3,.flac,.ogg" aria-describedby="input-hint">
+              </div>
+              <button id="send" type="submit" class="button primary" disabled>发送 <span aria-hidden="true">↑</span></button>
+            </div>
+            <p id="input-hint" class="hint">每轮任选一种输入 · 文字最多 4000 字 · 音频最多 16 MiB / 120 秒</p>
+          </fieldset>
+        </form>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

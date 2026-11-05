@@ -83,11 +83,44 @@ FFMPEG_PATH=.data/tools/ffmpeg.exe
 
 `STT_MODEL_SHA256` 可选，配置后启动时校验权重；不匹配会拒绝加载而不是自动下载。不需要本地语音时设 `STT_PROVIDER=auto` 并留空这两个路径即可，其余功能不受影响。`.env` 由 Git 忽略。注入 `STT_MODEL_PATH` 和 `FFMPEG_PATH` 后的本地 Whisper 转写实测见 [R-python-01](docs/acceptance/R-python-01.md)。
 
-### 网页语音联调
+### 原仓库的招聘网页联调
 
 在独立仓库启动 FastAPI，在原仓库启动 Next.js 网页。后端的 `APP_BASE_URL` 填浏览器实际访问的 origin，网页服务端的 `PYTHON_API_URL` 指向 FastAPI。使用 `LLM_PROVIDER=fake`、`STT_PROVIDER=whisper` 和 `TTS_PROVIDER=local`，从演示工作台创建语音邀请。候选页同意并授权麦克风后，点击开始和结束语音输入，核对草稿后再发送。题目播报需要浏览器可用的本地中文音色。
 
 已用本机 Python 3.11.9、Chromium 合成设备轨道和真实 Whisper base 跑通录音、转写、确认后提交、刷新恢复、评分报告及人工复核。物理麦克风、摄像头和实际播报声音需在使用设备上复测。详见 [D52](DECISIONS.md#d52-独立后端的网页语音联调)。
+
+## 启动轻量练习网页
+
+页面在 `apps/web`，使用原生 HTML、CSS 和 Fetch API。以下两组命令在各自的 PowerShell 终端运行，使用本仓库的 `.venv-clean`，直接打开 `http://localhost:5173`。
+
+终端一启动后端。
+
+```powershell
+Set-Location D:\work\ai_interviewer_python
+$py = '.\.venv-clean\Scripts\python.exe'
+$env:PYTHONPATH = 'apps/api'
+$env:APP_ENV = 'development'
+$env:LLM_PROVIDER = 'fake'
+$env:DB_DRIVER = 'sqlite'
+$env:SQLITE_PATH = '.data/python/web-practice.sqlite3'
+$env:STT_PROVIDER = 'whisper'
+$env:STT_MODEL = 'base'
+$env:STT_MODEL_PATH = '.data/models/whisper/base.pt'
+$env:FFMPEG_PATH = '.data/tools/ffmpeg.exe'
+$env:TTS_PROVIDER = 'local'
+& $py -m uvicorn interviewer.main:app --host 127.0.0.1 --port 8010
+```
+
+终端二启动静态页面。
+
+```powershell
+Set-Location D:\work\ai_interviewer_python
+& .\.venv-clean\Scripts\python.exe -m http.server 5173 --bind 127.0.0.1 --directory apps/web
+```
+
+在网页确认知情说明后，填写文字或选择一个音频文件，然后发送。音频先经本机 Whisper 转写，候选人和面试官的文字随后分别显示在聊天区两侧。当前标签页刷新可继续，侧栏可删除会话。两个终端各按 `Ctrl+C` 停止服务。
+
+`fake` 模式用于本地演示。连接已获准的内网 OpenAI 兼容模型时，将终端一的 `LLM_PROVIDER` 改为 `internal`，在后端 `.env` 配置 `LLM_BASE_URL`、`LLM_MODEL` 及网关所需的 `LLM_API_KEY`。可选 `LLM_MODEL_NAME` 覆盖对话模型名。模型密钥只由后端读取。使用 `STT_PROVIDER=auto` 可运行纯文字版。
 
 ## Python 验证
 
