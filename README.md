@@ -1,13 +1,30 @@
 # 研究生校招 AI 面试官 · Python 版
 
-FastAPI 后端和终端面试工具，可运行结构化面试、证据评分、报告、人工改分、审计和数据删除。使用 Python 3.11+，默认用 SQLite 和 fake 模型。此目录提供 API 和 CLI，原仓库保留招聘者工作台、候选人网页、摄像头界面和报告打印页。
+FastAPI 后端和终端面试工具，可运行结构化面试、证据评分、报告、人工改分、审计和数据删除。使用 Python 3.11+，默认用 SQLite 和 fake 模型。API 和 CLI 可独立运行。招聘者工作台、候选人网页、摄像头界面和报告打印页可通过单独启动的网页客户端使用。
+
+## 准备 Python 3.11 环境
+
+首次使用或换机器时，在仓库根目录运行。`$python311` 填本机 Python 3.11 解释器的实际位置，以下示例使用 Python.org 的默认用户安装路径。
+
+```powershell
+$python311 = Join-Path $env:LOCALAPPDATA 'Programs\Python\Python311\python.exe'
+& $python311 --version
+& $python311 -m venv .venv-clean
+$py = '.\.venv-clean\Scripts\python.exe'
+& $py -m pip install --index-url https://pypi.org/simple -r apps/api/requirements.lock -r apps/api/requirements-whisper.txt -c apps/api/constraints-python311.txt
+& $py -m pip check
+```
+
+推荐使用 `.venv-clean`，它的第三方包独立安装。已有的 `.venv` 可作本机回退，使用时将 `$py` 改为 `'.\.venv\Scripts\python.exe'`。旧环境继承本机全局包，换机器时用上面的命令重建环境。后端和文字 CLI 只需要安装 `requirements.lock`，其中已包含检查工具。
+
+离线安装时，在可联网且 Python 版本、系统和架构相同的机器上，用 `python -m pip wheel --wheel-dir <wheel目录>` 加上同样的 `-r` 和 `-c` 参数备齐 wheel，其中包括从固定源码版本构建的 Whisper wheel。将目录复制到目标机器，用 `& $py -m pip install --no-index --find-links <wheel目录>` 加上同样的 `-r` 和 `-c` 参数安装。语音权重和 FFmpeg 按下文单独放置。
 
 ## 在本机启动
 
-以下命令在本目录运行。使用本仓库自带的 Python 3.11 环境，不引用其他仓库或目录。
+以下命令在本目录运行，使用前面创建的 Python 3.11 环境。
 
 ```powershell
-$py = '.\.venv\Scripts\python.exe'
+$py = '.\.venv-clean\Scripts\python.exe'
 $env:PYTHONPATH = 'apps/api'
 & $py --version
 & $py -m interviewer.cli migrate
@@ -21,8 +38,6 @@ $env:PYTHONPATH = 'apps/api'
 - API 契约为 `http://127.0.0.1:8000/api/openapi.json`，可用 `python -m interviewer.cli openapi` 导出本地文件。浏览器直接调用 API 可用对应的 API 客户端，应用未启用依赖外部 CDN 的交互式文档。
 - 开发模式可用 `POST /api/auth/login` 和空 JSON 对象建立合成演示会话。候选人 API 接受邀请返回的 `inviteToken` 作为 Bearer 令牌，回答前仍须明确同意。生产设置见 `.env.example`。
 - 已有 PostgreSQL 16 时，填入 `DB_DRIVER=postgres` 和 `DATABASE_URL`，然后用同一迁移命令。已有脱敏快照可通过 `python -m interviewer.cli import-snapshot --file <文件>` 导入空库。
-
-在其他机器可创建 Python 3.11 虚拟环境。离线准备好 wheel 目录后，使用 `python -m pip install --no-index --find-links <wheel目录> -r apps/api/requirements.lock`。
 
 ## 文本与本地音频面试
 
@@ -48,7 +63,7 @@ Copy-Item <已有 base.pt> .data\models\whisper\base.pt
 Copy-Item <已有 ffmpeg.exe> .data\tools\ffmpeg.exe
 ```
 
-首次配置时从 `.env.example` 创建 `.env`。两个语音资产的相对路径均按仓库根解析，启动工作目录可以不同。也可填写绝对路径或用 `~` 指向用户主目录。
+首次配置时从 `.env.example` 创建 `.env`。两个语音资产的相对路径均按仓库根解析，也可填写绝对路径或用 `~` 指向用户主目录。从其他目录启动时，将 `PYTHONPATH` 指向本仓库 `apps/api` 的绝对路径。
 
 ```dotenv
 STT_PROVIDER=whisper

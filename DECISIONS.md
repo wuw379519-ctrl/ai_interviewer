@@ -555,3 +555,11 @@ Chromium 的文件模拟麦克风启动时报 `Not supported`，改为通过 Web
 本机 Python 3.11.9 三项门禁通过，pytest 188 通过、8 项 PostgreSQL 条件跳过。从仓库根和 `C:\` 各启动一次 8010，均返回 `speech=server_configured`，仓库内 FFmpeg 9.0.2 在两个工作目录都可执行。验证使用内存 SQLite，完成后停止两个服务。
 
 可将两个环境变量改回绝对路径来回退配置。若回退本次实现，先恢复绝对路径，再恢复按进程工作目录解析的版本。
+
+## D55 使用独立的 Python 3.11 第三方包环境
+
+以本机 Python 3.11.9 运行 `python.exe -m venv .venv-clean`，确认 `include-system-site-packages = false`。从官方 PyPI 安装现有 `requirements.lock`、`requirements-whisper.txt`，同时应用 `constraints-python311.txt`。先用 Pydantic wheel 探测连通性，获得用户同意后下载 PyTorch 2.15.0 Windows x64 wheel。Whisper 20250625 由 pip 从该版本的源码构建。未增加依赖声明或调整现有锁定版本。现有锁已包含检查工具，历史 overlay 用于继承全局包的环境。FFmpeg 直接使用仓库内已有可执行文件。
+
+`pip check` 返回 `No broken requirements found.`。隔离模式导入校验确认所需模块都来自 `.venv-clean`，Torch 实际版本为 `2.15.0+cpu`。Ruff 通过，mypy 检查 29 个文件无错误，pytest 188 通过、8 项 PostgreSQL 条件跳过，另有 1 条 Starlette TestClient 关于 httpx 的弃用警告。从仓库根和 `C:\` 分别在 8010 验证 `speech=server_configured`，完成后停止服务。以上为本机验证。
+
+README 默认使用 `.venv-clean`。旧 `.venv` 保留，可切换 `$py` 回退。换机器或移动仓库时用目标机器的 Python 3.11 重建虚拟环境，按 README 在线安装或准备完整的离线 wheel 集合。本地语音资产可以沿用 D54 的相对路径配置。
