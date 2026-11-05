@@ -17,6 +17,8 @@
 ## Implementation
 
 - The user chose a full FastAPI migration. Python3.11+/FastAPI/Pydantic/SQLAlchemy is the only online backend.
+- TypeScript application code belongs in `apps/web` for presentation and same-origin proxying, or `packages/core` for schemas and pure functions. Business writes, scoring and persistence belong to FastAPI. Root TypeScript tooling and Playwright tests support the workspace.
+- At the TypeScript integration milestone, run `pnpm lint`, `pnpm typecheck`, `pnpm test` and `pnpm build` in addition to the Python gates. Preserve test assertions and existing skip conditions.
 - Python uses typed functions, no explicit `typing.Any`, Pydantic input/LLM validation, Ruff and mypy. Unvalidated JSON is `object`/`unknown`.
 - Backend contracts/domain/auth/provider/governance/persistence live under `apps/api/interviewer`, tests under `apps/api/tests`, Python fixtures under `apps/api/interviewer/resources`.
 - Add immutable migrations; keep SQLAlchemy metadata aligned. Preserve applied Postgres migrations in `apps/api/migrations/postgres`; SQLite migrations live in `apps/api/migrations/sqlite`.

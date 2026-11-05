@@ -577,3 +577,25 @@ README 默认使用 `.venv-clean`。旧 `.venv` 保留，可切换 `$py` 回退�
 `apps/web` 使用原生 HTML、CSS 和 Fetch，以 Python 标准库静态服务从 `http://localhost:5173` 访问，API 使用 `127.0.0.1:8010`。浏览器标签页仅保留会话凭证，历史由 API 返回。提交支持文字和音频文件，失败时保留当前输入和重试幂等键。可单独撤回页面改动，练习 API 可独立运行。
 
 最终版本在 `.venv-clean` 重跑三项 Python 门禁与 `node --check`，pytest 193 通过、8 跳过。Chromium 通过 CORS、知情同意、文字、合成 MP3、两轮上下文、刷新恢复、窄屏和删除检查。使用真实本机 Whisper 和 FFmpeg，第二轮上传至显示回复约 3.3 秒，LLM 使用 fake。本轮未调用真实模型端点，未执行 PostgreSQL 16、Docker 或托管 CI。
+
+## D58 招聘网页与 FastAPI 共用仓库
+
+从原仓库 `3c2c873` 复制 Next.js `apps/web`、它唯一引用的共享包 `packages/core`、Playwright 用例与 fixture，以及 Node 启动和检查配置。Next 负责展示和同源转发，FastAPI 继续处理认证、同意、业务写入、评分和存储。PGlite、Drizzle、TS 模型与评估包属于原仓库的遗留工具，工作台没有依赖，因此留在原仓库。
+
+原有静态练习页原样迁到 `apps/practice`，继续使用独立的本机练习 API。联合启动脚本优先查找 `.venv`，其次 `.venv-clean`、`.venv311` 和 PATH，支持显式 `PYTHON_EXECUTABLE`。Python 后端、Python 脚本及数据库迁移沿用迁移前的版本。
+
+可按提交逆序撤销本轮改动。回退会移除 Node 工作区和招聘网页，并将静态练习页还原到 `apps/web`。原仓库可继续独立使用。
+
+## D59 裁剪 Node 锁文件并统一验证
+
+离线尝试遇到宿主 pnpm 12.16.1 的固定版本缓存未命中和宿主缓存锁权限限制。改用 Corepack 获取项目固定的 pnpm 10.34.9，并通过官方 npm registry 安装。`.npmrc` 保留原 peer 策略，registry 指向已验证的官方仓库，store 放在目标仓库被忽略的 `.pnpm-store` 中。源缓存无需写入。
+
+锁文件以原文件为起点，因裁剪工作区而重生成，只保留根目录、`apps/web` 和 `packages/core` 三个 importer。保留声明的依赖范围和直接依赖版本。`pnpm verify` 通过 ESLint、Ruff、全量 TypeScript（含 Playwright 配置与用例）、mypy、Vitest、pytest 和 Next.js 15.5.28 生产构建。
+
+历史源基线为 Vitest 18 文件、243 项。本仓库实跑 12 文件、160 项。差额为 `packages/db` 的 3 文件、34 项，`packages/llm` 的 2 文件、14 项，以及 `packages/evals` 的 1 文件、35 项。Python 实跑 193 通过、8 项 PostgreSQL 条件跳过。
+
+## D60 招聘工作台在目标仓库完成联调
+
+`node scripts/dev.mjs --web-port 3010 --api-port 8010` 启动两个服务。Next 首页返回 200 HTML，`/api/health` 返回 200 和 `service=aii-python`，代理和直接请求得到相同 FastAPI `instanceId`。直接访问 FastAPI 首页返回 401。Chromium 从招聘者演示登录走到创建岗位与候选人、生成邀请、同意和首轮答题。答题返回 200，页面显示追问，期间代理无 503。
+
+独立测试库使用 fake LLM 和模拟媒体。`pnpm test:e2e` 在 3101/8101 实跑 16 项全部通过（3.6 分钟）。最终执行 `pnpm install --offline --frozen-lockfile`，输出 `Lockfile is up to date` 和 `Already up to date`。四个测试端口均已停止监听。未运行生产验收脚本、Docker、实际 PostgreSQL 16 或托管 CI。

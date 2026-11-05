@@ -1,0 +1,40 @@
+{
+  "name": "ai-interviewer",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.34.9",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "pnpm --filter \"./packages/*\" typecheck && pnpm --filter @aii/web build",
+    "lint": "eslint . --max-warnings=0 && node scripts/python.mjs -m ruff check --config apps/api/pyproject.toml apps/api scripts",
+    "typecheck": "pnpm -r --filter \"./packages/*\" --filter @aii/web typecheck && tsc -p tsconfig.e2e.json --noEmit && node scripts/python.mjs -m mypy --config-file apps/api/pyproject.toml apps/api/interviewer scripts",
+    "test": "vitest run && node scripts/python.mjs -m pytest -c apps/api/pyproject.toml apps/api/tests",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "db:migrate": "node scripts/python.mjs -m interviewer.cli migrate",
+    "db:seed": "node scripts/python.mjs -m interviewer.cli seed",
+    "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "db:ids": "node scripts/python.mjs -m interviewer.cli ids",
+    "evals": "node scripts/python.mjs -m interviewer.cli evals",
+    "test:production": "tsx apps/web/scripts/production-acceptance.ts",
+    "retention:preview": "node scripts/python.mjs -m interviewer.cli retention-preview",
+    "retention:run": "node scripts/python.mjs -m interviewer.cli retention-run --execute",
+    "api:dev": "node scripts/api-start.mjs",
+    "api:start": "node scripts/api-start.mjs --production",
+    "api:openapi": "node scripts/python.mjs -m interviewer.cli openapi",
+    "test:storage-contract": "node scripts/python.mjs -m pytest -c apps/api/pyproject.toml apps/api/tests/test_storage_contract.py"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.20.0",
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^22.13.0",
+    "eslint": "^9.20.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.24.0",
+    "vitest": "^3.0.5"
+  }
+}

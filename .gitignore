@@ -9,3 +9,15 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 *.log
+node_modules/
+.next/
+.next*/
+out/
+dist/
+coverage/
+.turbo/
+*.tsbuildinfo
+test-results/
+playwright-report/
+.pnpm-store/
+pnpm-store/

@@ -1,6 +1,6 @@
 # 研究生校招 AI 面试官 · Python 版
 
-FastAPI 后端和终端面试工具，可运行结构化面试、证据评分、报告、人工改分、审计和数据删除。使用 Python 3.11+，默认用 SQLite 和 fake 模型。API 和 CLI 可独立运行。招聘者工作台、候选人网页、摄像头界面和报告打印页可通过单独启动的网页客户端使用。
+本仓库包含 Next.js 招聘工作台、FastAPI 后端和终端面试工具。FastAPI 负责结构化面试、证据评分、报告、人工改分、审计和数据删除，默认用 SQLite 和 fake 模型。API 和 CLI 也可独立运行。
 
 ## 准备 Python 3.11 环境
 
@@ -83,15 +83,26 @@ FFMPEG_PATH=.data/tools/ffmpeg.exe
 
 `STT_MODEL_SHA256` 可选，配置后启动时校验权重；不匹配会拒绝加载而不是自动下载。不需要本地语音时设 `STT_PROVIDER=auto` 并留空这两个路径即可，其余功能不受影响。`.env` 由 Git 忽略。注入 `STT_MODEL_PATH` 和 `FFMPEG_PATH` 后的本地 Whisper 转写实测见 [R-python-01](docs/acceptance/R-python-01.md)。
 
-### 原仓库的招聘网页联调
+## 网页工作台
 
-在独立仓库启动 FastAPI，在原仓库启动 Next.js 网页。后端的 `APP_BASE_URL` 填浏览器实际访问的 origin，网页服务端的 `PYTHON_API_URL` 指向 FastAPI。使用 `LLM_PROVIDER=fake`、`STT_PROVIDER=whisper` 和 `TTS_PROVIDER=local`，从演示工作台创建语音邀请。候选页同意并授权麦克风后，点击开始和结束语音输入，核对草稿后再发送。题目播报需要浏览器可用的本地中文音色。
+准备 Python 3.11+、Node 20.11+ 和 pnpm 10.34.9 后，在仓库根目录运行。
+
+```powershell
+pnpm install
+pnpm dev
+```
+
+打开 `http://127.0.0.1:3000`，FastAPI 默认使用 `127.0.0.1:8000`。端口已被占用时可运行 `node scripts/dev.mjs --web-port 3010 --api-port 8010`，打开 `http://127.0.0.1:3010`。按 `Ctrl+C` 停止两个进程。
+
+浏览器通过同源 `/api/*` 调用 Next，Next 通过 `PYTHON_API_URL` 转发给 FastAPI。联合启动脚本自动设置转发目标和默认 `APP_BASE_URL`。如果自行指定 `APP_BASE_URL`，请让它与浏览器实际访问的 origin 一致。
+
+Python 解释器按 `.venv`、`.venv-clean`、`.venv311`、PATH 的顺序查找。可在终端设置 `$env:PYTHON_EXECUTABLE = (Resolve-Path '.\.venv-clean\Scripts\python.exe').Path` 显式使用隔离环境。`pnpm verify` 一次运行 TS 和 Python 门禁。Playwright 浏览器就绪后可用 `pnpm test:e2e` 单独运行浏览器套件。
 
 已用本机 Python 3.11.9、Chromium 合成设备轨道和真实 Whisper base 跑通录音、转写、确认后提交、刷新恢复、评分报告及人工复核。物理麦克风、摄像头和实际播报声音需在使用设备上复测。详见 [D52](DECISIONS.md#d52-独立后端的网页语音联调)。
 
 ## 启动轻量练习网页
 
-页面在 `apps/web`，使用原生 HTML、CSS 和 Fetch API。以下两组命令在各自的 PowerShell 终端运行，使用本仓库的 `.venv-clean`，直接打开 `http://localhost:5173`。
+页面在 `apps/practice`，使用原生 HTML、CSS 和 Fetch API。以下两组命令在各自的 PowerShell 终端运行，使用本仓库的 `.venv-clean`，直接打开 `http://localhost:5173`。
 
 终端一启动后端。
 
@@ -115,7 +126,7 @@ $env:TTS_PROVIDER = 'local'
 
 ```powershell
 Set-Location D:\work\ai_interviewer_python
-& .\.venv-clean\Scripts\python.exe -m http.server 5173 --bind 127.0.0.1 --directory apps/web
+& .\.venv-clean\Scripts\python.exe -m http.server 5173 --bind 127.0.0.1 --directory apps/practice
 ```
 
 在网页确认知情说明后，填写文字或选择一个音频文件，然后发送。音频先经本机 Whisper 转写，候选人和面试官的文字随后分别显示在聊天区两侧。当前标签页刷新可继续，侧栏可删除会话。两个终端各按 `Ctrl+C` 停止服务。
