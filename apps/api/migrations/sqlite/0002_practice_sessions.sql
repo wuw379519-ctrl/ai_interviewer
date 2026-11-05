@@ -1,0 +1,9 @@
+CREATE TABLE IF NOT EXISTS practice_sessions (
+    id CHAR(32) PRIMARY KEY NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    consent_version TEXT NOT NULL,
+    turns JSON NOT NULL,
+    retained_until DATETIME NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

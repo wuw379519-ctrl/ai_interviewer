@@ -155,6 +155,10 @@ data_policies = table("data_policies", Column("id", String, primary_key=True), i
                       integer("revision", 1), txt("updated_by", "system", False),
                       CheckConstraint("id = 'workspace' AND retention_days BETWEEN 1 AND 90 AND revision > 0"))
 TABLES = {item.name: item for item in metadata.sorted_tables}
+# The legacy recruitment snapshot format has a fixed table set. Practice stays local to this database.
+practice_sessions = table("practice_sessions", uid(), txt("token_hash", nullable=False),
+                          txt("consent_version", nullable=False), document("turns"),
+                          date("retained_until", False), UniqueConstraint("token_hash"))
 
 
 def rows(connection: StorageSession | Connection, statement: Executable) -> list[Row]:

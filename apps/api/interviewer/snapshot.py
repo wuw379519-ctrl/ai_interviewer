@@ -87,7 +87,7 @@ def import_snapshot(database: db.Database, file: Path, quarantine_unconsented: b
         # Restore the identical gate before commit. Other connections never see an unguarded committed schema.
         with database.historical_answer_import(connection):
             db.command(connection, db.data_policies.delete())
-            for table in db.metadata.sorted_tables:
+            for table in db.TABLES.values():
                 for row in converted[table.name]:
                     db.insert(connection, table, row)
         db.insert(connection, db.audit_logs, {"actor_type": "system", "actor_id": "python-migration", "action": "migration.imported",

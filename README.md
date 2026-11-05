@@ -48,6 +48,12 @@ $env:PYTHONPATH = 'apps/api'
 
 输入 `yes` 同意后开始，输入 `/exit` 退出。每轮最多 4000 字。语音脚本也接受本地音频路径，使用 `STT_MODEL_PATH` 指定已有 `base.pt`。其他音频编码可用 `FFMPEG_PATH` 指定现有 FFmpeg。可选语音依赖见 `apps/api/requirements-whisper.txt`；Python 3.11 额外应用 `apps/api/constraints-python311.txt`。`STT_INITIAL_PROMPT` 可以提示模型偏向简体。`--real` 仅用于明确获准的模型端点，模型参数见 `.env.example`。
 
+### 本机练习 API
+
+开发模式下，`GET /api/interview/chat` 返回知情说明和版本。客户端生成 32 字节随机值并编码为小写十六进制，作为 `Authorization: Bearer <值>`。使用该凭证向 `PUT /api/interview/session` 提交 `{"accepted":true,"consent_version":"<当前版本>"}`。后续请求使用同一凭证。
+
+`POST /api/interview/chat` 接受 `multipart/form-data`。每次提供 `text` 或 `file`，并可带 `Idempotency-Key`。返回 `user_text` 与 `ai_reply`。文字最多 4000 字。音频需启用本地 Whisper，上传上限 16 MiB，解码后最多 120 秒。`GET /api/interview/session` 读取已保存的历史，`DELETE /api/interview/session` 删除会话。浏览器来源限定为 `http://localhost:5173`。
+
 ### 本地语音资产
 
 音频模式需要可用的本地 Whisper 环境和权重。权重与 FFmpeg 都放在本仓库内，仓库外不需要任何文件。按下列目录放置（两者都被 Git 忽略，不会提交）：

@@ -13,6 +13,7 @@ from uuid import UUID, uuid4
 from fastapi import FastAPI, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import ValidationError
 from .repository import StorageSession
@@ -20,6 +21,7 @@ from starlette.exceptions import HTTPException
 
 from . import assessment, database as db, governance, speech, tts
 from .auth import Actor
+from .chat_api import CHAT_PATH, SESSION_PATH, WEB_ORIGIN, PracticeChat
 from .contracts import (CandidateCreate, CleanupInput, CompetencySet, ConsentInput, Contract,
                         DeleteInput, EmptyInput, ErrorEnvelope, GraduateInput, InterviewCreate, JobCreate,
                         LoginInput, MediaInput, Object, PauseInput, PrintInput, ReportDocument,
@@ -79,25 +81,11 @@ def candidate_write(request: Request, identity: str, operation: str, body: Contr
                              lambda: work(service, connection), interview_id=identity)
 
 
-async def read_limited(request: Request, maximum: int) -> bytes:
-    try:
-        size = int(request.headers.get("content-length", "0"))
-    except ValueError as error:
-        raise DomainError("VALIDATION_FAILED", "请求长度无效") from error
-    if size > maximum:
-        raise DomainError("VALIDATION_FAILED", "请求体超过允许大小")
-    output = bytearray()
-    async for chunk in request.stream():
-        output.extend(chunk)
-        if len(output) > maximum:
-            raise DomainError("VALIDATION_FAILED", "请求体超过允许大小")
-    return bytes(output)
-
-
 def create_app(configuration: Settings | None = None) -> FastAPI:
     settings = configuration or Settings.from_env()
     database = db.Database(settings)
     service = Service(settings, database)
+    practice = PracticeChat(service)
     operations = Operations(settings.operation_logs)
     instance_id = str(uuid4())
 
@@ -118,9 +106,13 @@ def create_app(configuration: Settings | None = None) -> FastAPI:
                   openapi_url="/api/openapi.json", docs_url=None, redoc_url=None,
                   responses={code: {"model": ErrorEnvelope} for code in [400, 401, 403, 404, 409, 410, 429, 500, 502, 503]})
     app.state.service = service
+    practice.mount(app)
 
     def admit(request: Request) -> None:
         path = request.url.path
+        if path in {CHAT_PATH, SESSION_PATH}:
+            practice.admit(request)
+            return
         if path in {"/api/health", "/api/ready", "/api/openapi.json"}:
             return
         if path in {"/api/auth/login", "/api/admin/login"}:
@@ -165,6 +157,11 @@ def create_app(configuration: Settings | None = None) -> FastAPI:
         response.headers["X-Request-Id"], response.headers["Server-Timing"] = identity, f"application;dur={elapsed}"
         response.headers["Cache-Control"] = "no-store"
         return response
+
+    if settings.environment == "development":
+        app.add_middleware(CORSMiddleware, allow_origins=[WEB_ORIGIN], allow_credentials=False,
+                           allow_methods=["GET", "PUT", "POST", "DELETE"],
+                           allow_headers=["Authorization", "Content-Type", "Idempotency-Key"])
 
     @app.exception_handler(DomainError)
     async def domain_error(_request: Request, error: DomainError) -> Response:
@@ -249,7 +246,7 @@ def create_app(configuration: Settings | None = None) -> FastAPI:
 
     @app.post("/api/candidates/{candidate_id}/resume", tags=["candidates"], status_code=201)
     async def resume(request: Request, candidate_id: UUID) -> Response:
-        raw = await read_limited(request, 3 * 1024 * 1024)
+        raw = await speech.read_limited(request, 3 * 1024 * 1024)
         content_type = request.headers.get("content-type", "")
         if content_type.startswith("multipart/form-data"):
             content, name, mime = speech.memory_upload(raw, content_type, "file")
@@ -316,7 +313,7 @@ def create_app(configuration: Settings | None = None) -> FastAPI:
     @app.post("/api/interviews/{interview_id}/transcribe", tags=["candidate"])
     async def transcribe(request: Request, interview_id: UUID) -> Response:
         await run_in_threadpool(speech.check_speech, service, request, str(interview_id))
-        raw = await read_limited(request, speech.MAX_AUDIO_BYTES + 65536)
+        raw = await speech.read_limited(request, speech.MAX_AUDIO_BYTES + 65536)
         content, _name, _mime = speech.memory_upload(raw, request.headers.get("content-type", ""), "audio")
         return send(await run_in_threadpool(speech.transcribe, service, request, str(interview_id), content))
 

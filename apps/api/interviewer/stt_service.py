@@ -18,6 +18,46 @@ _default: STTService | None = None
 _default_lock = threading.Lock()
 
 
+def _pcm_wave(pcm: bytes) -> bytes:
+    if not pcm or len(pcm) % 2 or len(pcm) > 16000 * 2 * 120:
+        raise DomainError("VALIDATION_FAILED", "音频为空、解码无效或超过120秒，请分段处理")
+    output = io.BytesIO()
+    with wave.open(output, "wb") as writer:
+        writer.setnchannels(1)
+        writer.setsampwidth(2)
+        writer.setframerate(16000)
+        writer.writeframes(pcm)
+    content = output.getvalue()
+    validate_wave(content)
+    return content
+
+
+def _convert_wave(settings: Settings, source: str, protocols: str, uploaded: bytes | None = None) -> bytes:
+    executable = settings.ffmpeg_path or shutil.which("ffmpeg")
+    if not executable or not Path(executable).is_file():
+        raise DomainError("SPEECH_UNAVAILABLE", "当前进程找不到ffmpeg，请配置FFMPEG_PATH或重新打开已更新PATH的终端")
+    try:
+        # Decode up to 121 seconds so the existing 120-second limit rejects overlong audio.
+        result = subprocess.run([executable, "-nostdin", "-hide_banner", "-loglevel", "error",
+                                 "-protocol_whitelist", protocols, "-i", source, "-vn", "-t", "121",
+                                 "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", "-f", "s16le", "pipe:1"],
+                                stdin=subprocess.DEVNULL if uploaded is None else None, input=uploaded,
+                                capture_output=True, timeout=settings.stt_timeout, check=True, shell=False)
+    except (OSError, subprocess.SubprocessError):
+        raise DomainError("SPEECH_UNAVAILABLE", "本地ffmpeg解码失败或超时；请检查音频格式和可执行文件") from None
+    return _pcm_wave(result.stdout)
+
+
+def uploaded_wave(settings: Settings, content: bytes) -> bytes:
+    if not 0 < len(content) <= MAX_FILE_BYTES:
+        raise DomainError("VALIDATION_FAILED", "音频文件须非空且不超过16MiB")
+    try:
+        validate_wave(content)
+    except DomainError:
+        return _convert_wave(settings, "pipe:0", "pipe", content)
+    return content
+
+
 class STTService:
     def __init__(self, settings: Settings | None = None) -> None:
         # Settings.from_env uses python-dotenv on the repository root .env, override=False.
@@ -38,31 +78,7 @@ class STTService:
                 return content
             except DomainError:
                 pass  # Other WAV encodings/sample rates go through the same local converter.
-        executable = self.settings.ffmpeg_path or shutil.which("ffmpeg")
-        if not executable or not Path(executable).is_file():
-            raise DomainError("SPEECH_UNAVAILABLE", "当前进程找不到ffmpeg，请配置FFMPEG_PATH或重新打开已更新PATH的终端")
-        try:
-            # Raw PCM avoids non-seekable WAV headers. At most 121 seconds are decoded;
-            # the existing 120-second validator rejects overlong files, never truncates silently.
-            result = subprocess.run([executable, "-nostdin", "-hide_banner", "-loglevel", "error",
-                                     "-protocol_whitelist", "file,pipe", "-i", str(source), "-vn", "-t", "121",
-                                     "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", "-f", "s16le", "pipe:1"],
-                                    stdin=subprocess.DEVNULL, capture_output=True,
-                                    timeout=self.settings.stt_timeout, check=True, shell=False)
-        except (OSError, subprocess.SubprocessError):
-            raise DomainError("SPEECH_UNAVAILABLE", "本地ffmpeg解码失败或超时；请检查音频格式和可执行文件") from None
-        pcm = result.stdout
-        if not pcm or len(pcm) % 2 or len(pcm) > 16000 * 2 * 120:
-            raise DomainError("VALIDATION_FAILED", "音频为空、解码无效或超过120秒，请分段处理")
-        output = io.BytesIO()
-        with wave.open(output, "wb") as writer:
-            writer.setnchannels(1)
-            writer.setsampwidth(2)
-            writer.setframerate(16000)
-            writer.writeframes(pcm)
-        content = output.getvalue()
-        validate_wave(content)
-        return content
+        return _convert_wave(self.settings, str(source), "file,pipe")
 
     def transcribe_audio(self, audio_path: str) -> str:
         source = Path(audio_path).expanduser()

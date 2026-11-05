@@ -24,6 +24,21 @@ MAX_AUDIO_BYTES = 16000 * 2 * 120 + 44
 preview_lock = threading.RLock()
 
 
+async def read_limited(request: Request, maximum: int) -> bytes:
+    try:
+        size = int(request.headers.get("content-length", "0"))
+    except ValueError as error:
+        raise DomainError("VALIDATION_FAILED", "请求长度无效") from error
+    if size > maximum:
+        raise DomainError("VALIDATION_FAILED", "请求体超过允许大小")
+    output = bytearray()
+    async for chunk in request.stream():
+        if len(output) + len(chunk) > maximum:
+            raise DomainError("VALIDATION_FAILED", "请求体超过允许大小")
+        output.extend(chunk)
+    return bytes(output)
+
+
 def memory_upload(content: bytes, content_type: str, field: str) -> tuple[bytes, str, str]:
     kind, options = parse_options_header(content_type.encode())
     if kind != b"multipart/form-data" or b"boundary" not in options:

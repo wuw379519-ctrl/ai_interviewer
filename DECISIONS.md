@@ -563,3 +563,11 @@ Chromium 的文件模拟麦克风启动时报 `Not supported`，改为通过 Web
 `pip check` 返回 `No broken requirements found.`。隔离模式导入校验确认所需模块都来自 `.venv-clean`，Torch 实际版本为 `2.15.0+cpu`。Ruff 通过，mypy 检查 29 个文件无错误，pytest 188 通过、8 项 PostgreSQL 条件跳过，另有 1 条 Starlette TestClient 关于 httpx 的弃用警告。从仓库根和 `C:\` 分别在 8010 验证 `speech=server_configured`，完成后停止服务。以上为本机验证。
 
 README 默认使用 `.venv-clean`。旧 `.venv` 保留，可切换 `$py` 回退。换机器或移动仓库时用目标机器的 Python 3.11 重建虚拟环境，按 README 在线安装或准备完整的离线 wheel 集合。本地语音资产可以沿用 D54 的相对路径配置。
+
+## D56 独立的本机练习对话 API
+
+在开发模式提供文字或音频文件两条入口，复用 CLI 的安全校验、对话模型和服务端本地 Whisper。会话须先确认版本化说明。客户端凭证只保存哈希，提交成功后成对写入脱敏回答与追问，刷新可恢复。单进程同会话串行推理，支持幂等重试，模型失败时保留原历史。音频仅在内存处理，FFmpeg 转码限于管道协议。
+
+练习数据由独立的 SQLite / PostgreSQL 增量迁移保存。会话 90 天到期后无法读取，新建练习时清理已到期记录，也可用会话凭证立即删除。旧招聘快照格式继续使用固定表集。CORS 在开发模式仅允许 `http://localhost:5173`，练习接口在生产模式关闭。回退可撤销练习路由，已应用的增量迁移保留。
+
+后端里程碑在 Python 3.11.9 上通过 Ruff、mypy 和 pytest，193 通过、8 项 PostgreSQL 条件跳过。自动化测试使用 fake LLM 和替身转写。
