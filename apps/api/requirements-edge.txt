@@ -1,0 +1,3 @@
+# Optional only. Use an approved, pre-provisioned offline wheel set; never install at runtime.
+# Used by interviewer.tts.EdgeTTS, not by fake tests or the default offline runtime.
+edge-tts==7.3.1

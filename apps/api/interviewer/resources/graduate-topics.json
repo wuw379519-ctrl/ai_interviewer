@@ -1,0 +1,74 @@
+[
+  {
+    "key": "introduction",
+    "label": "自我介绍",
+    "sourceNumber": 1,
+    "mode": "information",
+    "dimension": 0,
+    "prompt": "请用约1分钟介绍你的研究方向、相关技能，以及一项与你应聘岗位相关的个人工作。"
+  },
+  {
+    "key": "cet4",
+    "label": "英语四级硬指标核验",
+    "sourceNumber": null,
+    "mode": "eligibility",
+    "dimension": 0,
+    "prompt": "请说明CET-4总分、考试时间，以及可供招聘者人工核验的成绩报告来源；暂时无法确认可以直接说明。本岗位要求总分至少425分。"
+  },
+  {
+    "key": "graduate_courses",
+    "label": "研究生课程硬指标核验",
+    "sourceNumber": null,
+    "mode": "eligibility",
+    "dimension": 0,
+    "prompt": "请说明研究生期间是否曾有课程不及格记录，包含补考或重修后已通过的情况，并说明可供人工核验的完整成绩单来源。本岗位要求研究生期间没有挂科记录。"
+  },
+  {
+    "key": "project",
+    "label": "项目经验",
+    "sourceNumber": 3,
+    "mode": "scored",
+    "dimension": 0,
+    "prompt": "请选择一个研究生期间的科研、课程、竞赛或实习项目，说明任务、你的个人贡献、使用的方法与可验证结果。"
+  },
+  {
+    "key": "motivation",
+    "label": "求职动机",
+    "sourceNumber": 5,
+    "mode": "scored",
+    "dimension": 3,
+    "prompt": "你为什么选择本岗位？请结合对岗位工作的理解，以及一次能体现岗位匹配的学习或实践经历说明。"
+  },
+  {
+    "key": "compensation",
+    "label": "期望收入",
+    "sourceNumber": 6,
+    "mode": "information",
+    "dimension": 0,
+    "prompt": "请按税前人民币说明期望月薪、期望年薪及可接受最低薪资，并说明12薪或13薪等口径；不确定或不愿披露最低值也可以说明。"
+  },
+  {
+    "key": "career",
+    "label": "职业规划",
+    "sourceNumber": 7,
+    "mode": "scored",
+    "dimension": 2,
+    "prompt": "未来1至3年你希望发展哪些岗位能力？请结合一次学习或实践经历，说明你为此做过什么以及如何验证进步。"
+  },
+  {
+    "key": "self_evaluation",
+    "label": "自我评价",
+    "sourceNumber": 8,
+    "mode": "scored",
+    "dimension": 1,
+    "prompt": "结合岗位要求，请用具体经历说明一项优势和一项待提升能力，以及已经采取的改进行动。"
+  },
+  {
+    "key": "work_arrangements",
+    "label": "工作安排（替代家庭情况，自愿回答）",
+    "sourceNumber": 9,
+    "mode": "information",
+    "dimension": 0,
+    "prompt": "关于工作安排，你是否有愿意说明的到岗时间、工作地点或出差安排约束？此项可以不回答，也不需要解释个人原因。"
+  }
+]

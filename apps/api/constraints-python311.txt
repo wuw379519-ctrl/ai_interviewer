@@ -1,0 +1,3 @@
+# Apply alongside requirements-whisper.txt when preparing Python 3.11 offline wheels.
+# Torch's NetworkX dependency must not resolve to a release requiring Python >=3.12.
+networkx==3.6.1; python_version < "3.12"

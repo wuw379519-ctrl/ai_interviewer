@@ -1,0 +1,12 @@
+# Optional local Whisper STT for the interpreter that runs the project.
+# For Python 3.11, also apply constraints-python311.txt when installing.
+# CPU torch; do not add CUDA packages here without an explicit GPU acceptance pass.
+# Weights are not installed by pip — set STT_MODEL_PATH to an existing base.pt.
+openai-whisper==20250625
+torch==2.15.0
+numpy==2.4.6
+numba==0.68.1
+llvmlite==0.50.0
+tiktoken==0.14.0
+more-itertools==11.2.1
+tqdm==4.70.1
