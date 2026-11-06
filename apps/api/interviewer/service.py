@@ -18,7 +18,7 @@ from . import database as db
 from .auth import Actor, Auth
 from .contracts import (CandidateCreate, CompetencySet, Contract, InterviewCreate, JobCreate,
                         MediaInput, Object, PlanDraft, ResumeExtraction, TurnInput, json_object)
-from .domain import (FOLLOWUP_TEXT, INJECTION, build_plan, fixture_competencies,
+from .domain import (FOLLOWUP_TEXT, FORMAL_TEXT_PLAN, INJECTION, build_plan, fixture_competencies,
                      fixture_resume, followup_missing, question_prompt, transition, validate_competencies)
 from .errors import DomainError
 from .provider import Provider
@@ -109,7 +109,10 @@ class Service:
             raise DomainError("UNAUTHORIZED", "邀请已撤回、删除或到期") from error
         if count_limit:
             self.auth.limit(f"candidate:{identity}")
-        if answering and row["status"] not in {"interviewing", "wrapping_up"}:
+        formal_replay = (row["plan_version"] == FORMAL_TEXT_PLAN
+                         and request.url.path.endswith("/turns") and bool(request.headers.get("idempotency-key"))
+                         and row["status"] in {"scoring", "report_ready", "reviewed"})
+        if answering and not formal_replay and row["status"] not in {"interviewing", "wrapping_up"}:
             raise DomainError("CONSENT_REQUIRED" if row["status"] in {"created", "invited", "consented", "warmup"} else "INTERVIEW_CLOSED", "当前状态不接受回答")
         return row
 
@@ -131,6 +134,8 @@ class Service:
         if len(key) > 200:
             raise DomainError("VALIDATION_FAILED", "幂等键不能超过200字符")
         payload = body.payload() if isinstance(body, Contract) else body
+        if isinstance(body, TurnInput) and body.expected_question_seq is None:
+            payload.pop("expectedQuestionSeq")
         fingerprint = json_hash(payload)
         if key:
             existing = db.rows(connection, select(db.idempotency_keys).where(and_(db.idempotency_keys.c.scope == scope, db.idempotency_keys.c.key == key)))
@@ -150,7 +155,7 @@ class Service:
         if key:
             if scope == "POST /candidates":
                 candidate_id = str(result.payload["id"])
-            if scope == "POST /interviews":
+            if scope in {"POST /interviews", "POST /formal-interviews"}:
                 interview_id = str(result.payload["interviewId"])
                 owner = db.one(connection, db.interviews, interview_id)
                 candidate_id = str(owner["candidate_id"]) if owner else candidate_id
@@ -246,7 +251,8 @@ class Service:
         plan, version = build_plan(dimensions, body.duration_minutes, job["recruitment_track"] == "graduate_campus")
         reusable = db.rows(connection, select(db.interviews).where(and_(db.interviews.c.job_id == body.job_id,
                            db.interviews.c.duration_minutes == body.duration_minutes,
-                           db.interviews.c.recruitment_track == job["recruitment_track"]))
+                           db.interviews.c.recruitment_track == job["recruitment_track"],
+                           db.interviews.c.plan_version != FORMAL_TEXT_PLAN))
                            .order_by(db.interviews.c.created_at).limit(1))
         if reusable:
             original = db.rows(connection, select(db.questions).where(db.questions.c.interview_id == reusable[0]["id"]).order_by(db.questions.c.seq))
@@ -266,6 +272,10 @@ class Service:
             for proposed in plan:
                 generated_question = groups[str(proposed["competencyId"])].pop(0)
                 proposed["prompt"], proposed["intent"] = safe_question(generated_question.prompt), generated_question.intent
+        return self.invite(connection, body, person, str(job["recruitment_track"]), plan, version, actor, bool(reusable))
+
+    def invite(self, connection: StorageSession, body: InterviewCreate, person: db.Row, track: str,
+               plan: list[Object], version: str, actor: Actor, reused: bool = False) -> Result:
         token = secrets.token_urlsafe(32)
         days = int(str(self.policy(connection)["retentionDays"]))
         row = db.insert(connection, db.interviews, {"candidate_id": body.candidate_id, "job_id": body.job_id,
@@ -273,7 +283,7 @@ class Service:
                         "invite_expires_at": db.now() + timedelta(days=7), "plan_version": version,
                         "retained_until": min(db.now() + timedelta(days=days), db.utc(person["retained_until"])),
                         "mode": body.mode, "camera_required": body.camera_required if body.camera_required is not None else body.mode == "voice",
-                        "recruitment_track": job["recruitment_track"], "retention_days": days})
+                        "recruitment_track": track, "retention_days": days})
         for question in plan:
             db.insert(connection, db.questions, {"interview_id": row["id"], "competency_id": question["competencyId"],
                       "seq": question["seq"], "prompt": question["prompt"], "intent": question["intent"], "followups": question["followups"],
@@ -281,7 +291,7 @@ class Service:
                       "assessment_mode": question["assessmentMode"]})
         self.audit(connection, "interview.invited", str(row["id"]), {"questionCount": len(plan), "planVersion": version}, actor, str(row["id"]))
         return Result({"interviewId": str(row["id"]), "status": "invited", "planVersion": version, "questionCount": len(plan),
-                       "reusedPlan": bool(reusable), "sealedToken": self.auth.seal(token), "inviteExpiresAt": db.iso(row["invite_expires_at"])}, 201)
+                       "reusedPlan": reused, "sealedToken": self.auth.seal(token), "inviteExpiresAt": db.iso(row["invite_expires_at"])}, 201)
 
     def question_rows(self, connection: StorageSession, interview_id: str) -> list[db.Row]:
         return db.rows(connection, select(db.questions).where(db.questions.c.interview_id == interview_id).order_by(db.questions.c.seq))
@@ -328,6 +338,7 @@ class Service:
         mandatory = [question for question in questions if question["mandatory"]]
         return {"interviewId": interview_id, "status": str(row["status"]), "durationMinutes": as_int(row, "duration_minutes"),
                 "retentionDays": as_int(row, "retention_days"), "retainedUntil": db.iso(row["retained_until"]), "recruitmentTrack": str(row["recruitment_track"]),
+                "formalText": row["plan_version"] == FORMAL_TEXT_PLAN,
                 "startedAt": db.iso(row["started_at"]) if row.get("started_at") else None, "remainingSec": self.remaining(row), "questionSeq": seq,
                 "followupsAsked": depth, "totalQuestions": len(questions), "answeredQuestions": sum(question["status"] in {"answered", "skipped"} for question in questions),
                 "pausedAt": db.iso(row["paused_at"]) if row.get("paused_at") else None, "jobTitle": str(self.required(connection, db.jobs, str(row["job_id"]), "JOB_NOT_FOUND")["title"]),
@@ -406,8 +417,11 @@ class Service:
         if row.get("paused_at"):
             raise DomainError("RESOURCE_CONFLICT", "面试已暂停，请先恢复")
         self.media_ready(row)
+        formal_text = row["plan_version"] == FORMAL_TEXT_PLAN
         question_rows, turns = self.question_rows(connection, identity), self.turn_rows(connection, identity)
         current = next((question for question in question_rows if question["seq"] == row["current_question_seq"]), question_rows[0])
+        if body.expected_question_seq is not None and body.expected_question_seq != current["seq"]:
+            raise DomainError("RESOURCE_CONFLICT", "当前题目已更新，请核对后再提交")
         depth = sum(turn["role"] == "interviewer" and turn["question_id"] == current["id"] and bool(turn["is_followup"]) for turn in turns)
         remaining = self.remaining(row)
         result: Object = {"interviewId": identity, "kind": "ask_question", "text": "", "questionSeq": as_int(current, "seq"),
@@ -426,14 +440,15 @@ class Service:
         low_time = remaining < as_int(row, "duration_minutes") * 60 * 0.2
         answers = "\n".join(str(turn["content"]) for turn in turns if turn["role"] == "candidate" and turn["question_id"] == current["id"])
         missing = followup_missing(answers)
-        if body.action == "answer" and not low_time and row["status"] == "interviewing" and current["assessment_mode"] == "scored" and depth < 2 and missing:
+        if not formal_text and body.action == "answer" and not low_time and row["status"] == "interviewing" and current["assessment_mode"] == "scored" and depth < 2 and missing:
             question = FOLLOWUP_TEXT[missing[0]]
             self.append(connection, identity, str(current["id"]), "interviewer", question, True)
             result.update(kind="ask_followup", text=question, followupDepth=depth + 1)
         else:
-            db.update(connection, db.questions, str(current["id"]), status="skipped" if body.action == "skip" else "answered")
+            skipped = body.action == "skip" or (formal_text and remaining <= 0)
+            db.update(connection, db.questions, str(current["id"]), status="skipped" if skipped else "answered")
             upcoming = [question for question in question_rows if as_int(question, "seq") > as_int(current, "seq") and question["status"] == "pending"]
-            if low_time:
+            if low_time and not formal_text:
                 upcoming = [question for question in upcoming if question["mandatory"]] if row["recruitment_track"] == "graduate_campus" else []
             if upcoming and remaining > 0 and row["status"] == "interviewing":
                 next_question = upcoming[0]
@@ -446,6 +461,9 @@ class Service:
                 closing = "本次面试到此结束，谢谢你的时间。后续结果由招聘者复核。"
                 self.append(connection, identity, str(current["id"]), "interviewer", closing)
                 result.update(kind="complete", text=closing, followupDepth=0, status="wrapping_up")
+                if formal_text:
+                    self.finish(connection, identity)
+                    result["status"] = "scoring"
         db.update(connection, db.interviews, identity, last_activity_at=db.now(), version=as_int(row, "version") + 1)
         self.audit(connection, "interview.turn", identity, {"action": body.action, "kind": result["kind"], "injectionSuspected": result["injectionSuspected"]}, Actor("candidate", identity, "候选人"), identity)
         return Result(result)

@@ -19,11 +19,11 @@ from pydantic import ValidationError
 from .repository import StorageSession
 from starlette.exceptions import HTTPException
 
-from . import assessment, database as db, governance, speech, tts
+from . import assessment, database as db, formal, governance, records, speech, tts
 from .auth import Actor
 from .chat_api import CHAT_PATH, SESSION_PATH, WEB_ORIGIN, PracticeChat
 from .contracts import (CandidateCreate, CleanupInput, CompetencySet, ConsentInput, Contract,
-                        DeleteInput, EmptyInput, ErrorEnvelope, GraduateInput, InterviewCreate, JobCreate,
+                        DeleteInput, EmptyInput, ErrorEnvelope, FormalInterviewCreate, GraduateInput, InterviewCreate, JobCreate,
                         LoginInput, MediaInput, Object, PauseInput, PrintInput, ReportDocument,
                         ResumeText, RetentionInput, ReviewInput, RevisionInput, ScoreInput,
                         TurnInput, json_object)
@@ -65,7 +65,7 @@ def recruiter_write(request: Request, scope: str, body: Contract, work: Worker,
             current = current_policy
         result = service.write(connection, request, scope, body, lambda: work(service, connection, actor),
                                candidate_id, interview_id, current)
-        if scope == "POST /interviews":
+        if scope in {"POST /interviews", "POST /formal-interviews"}:
             payload = dict(result.payload)
             payload["inviteToken"] = service.auth.open(str(payload.pop("sealedToken")))
             result = Result(payload, result.status, result.replayed)
@@ -148,7 +148,7 @@ def create_app(configuration: Settings | None = None) -> FastAPI:
             response = send(Result(DomainError("INTERNAL_ERROR", "服务内部错误").payload(), 500))
         elapsed = max(0, round((time.perf_counter() - started) * 1000))
         path = request.url.path
-        operation = "plan" if path == "/api/interviews" and request.method == "POST" else ""
+        operation = "plan" if path in {"/api/interviews", "/api/formal-interviews"} and request.method == "POST" else ""
         suffix = path.rsplit("/", 1)[-1]
         operation = {"state": "state", "turns": "turn", "score": "score", "transcribe": "transcribe"}.get(suffix, operation)
         if suffix in CANDIDATE_ACTIONS and not operation:
@@ -263,6 +263,11 @@ def create_app(configuration: Settings | None = None) -> FastAPI:
     @app.post("/api/interviews", tags=["interviews"], status_code=201)
     def create_interview(request: Request, body: InterviewCreate) -> Response:
         return recruiter_write(request, "POST /interviews", body, lambda svc, connection, actor: svc.create_interview(connection, body, actor), body.candidate_id)
+
+    @app.post("/api/formal-interviews", tags=["interviews"], status_code=201)
+    def create_formal_interview(request: Request, body: FormalInterviewCreate) -> Response:
+        return recruiter_write(request, "POST /formal-interviews", body,
+                               lambda svc, connection, actor: formal.create(svc, connection, body, actor))
 
     @app.get("/api/interviews/{interview_id}/state", tags=["candidate"])
     def state(request: Request, interview_id: UUID) -> Object:
@@ -391,6 +396,22 @@ def create_app(configuration: Settings | None = None) -> FastAPI:
     def candidates(before: UUID | None = None) -> Object:
         with database.unit_of_work() as connection:
             return governance.candidates_page(service, connection, str(before) if before else None)
+
+    @app.get("/api/admin/interviews", tags=["interviews"])
+    def list_interview_records(before: UUID | None = None) -> Object:
+        with database.unit_of_work() as connection:
+            return records.page(service, connection, str(before) if before else None)
+
+    @app.get("/api/admin/interviews/{interview_id}", tags=["interviews"])
+    def interview_record(request: Request, interview_id: UUID) -> Object:
+        with database.unit_of_work() as connection:
+            return records.detail(service, connection, str(interview_id), actor_of(request))
+
+    @app.post("/api/admin/interviews/{interview_id}/score", tags=["assessment"], response_model=ReportDocument)
+    def admin_score(request: Request, interview_id: UUID, body: EmptyInput) -> Response:
+        return recruiter_write(request, f"POST /admin/interviews/{interview_id}/score", body,
+                               lambda svc, connection, actor: assessment.generate_report(svc, connection, str(interview_id), False, actor),
+                               interview_id=str(interview_id), report=True, fresh=True)
 
     @app.get("/api/admin/audit", tags=["governance"])
     def audit(request: Request, limit: Annotated[int, Query(ge=1, le=100)] = 25, before: UUID | None = None,

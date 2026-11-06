@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Annotated, Literal, Self
 from uuid import UUID
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, field_validator, model_validator
 from pydantic.alias_generators import to_camel
 
 Object = dict[str, object]
@@ -50,6 +50,20 @@ class InterviewCreate(Contract):
     duration_minutes: Literal[15, 30, 45]
     mode: Literal["text", "voice"] = "text"
     camera_required: bool | None = None
+
+
+class FormalInterviewCreate(Contract):
+    title: str = Field(min_length=2, max_length=120)
+    candidate_name: str = Field(min_length=1, max_length=80)
+    jd_text: str = Field(min_length=30, max_length=20000)
+    resume_text: str = Field(min_length=20, max_length=30000)
+    fixed_questions: list[Annotated[str, Field(min_length=2, max_length=400)]] = Field(min_length=1, max_length=8)
+    duration_minutes: Literal[15, 30, 45] = 15
+
+    @field_validator("title", "candidate_name", "jd_text", "resume_text", mode="before")
+    @classmethod
+    def strip_input(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
 
 
 class Anchor(Contract):
@@ -138,6 +152,7 @@ class MediaInput(Contract):
 class TurnInput(Contract):
     action: Literal["answer", "repeat", "skip"]
     content: str | None = Field(default=None, max_length=4000)
+    expected_question_seq: int | None = Field(default=None, ge=1)
 
 
 class PauseInput(Contract):

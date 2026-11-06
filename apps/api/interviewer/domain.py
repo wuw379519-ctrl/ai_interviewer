@@ -14,6 +14,7 @@ from .errors import DomainError
 from .safety import INJECTION, PROTECTED, SENTINEL, json_hash, redact, safe_question
 
 GRADUATE_POLICY = "graduate-campus-v1-cet425"
+FORMAL_TEXT_PLAN = "formal-text-v1"
 TOPICS = TypeAdapter(list[Object]).validate_json((Path(__file__).parent / "resources/graduate-topics.json").read_text("utf-8"))
 TRANSITIONS: dict[str, set[str]] = {
     "created": {"invited", "cancelled"}, "invited": {"consented", "cancelled"},
