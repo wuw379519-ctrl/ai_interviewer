@@ -11,6 +11,7 @@ export const interviewStateSchema = z.object({ interviewId: z.string().uuid(), s
   followupsAsked: z.number(), totalQuestions: z.number(), answeredQuestions: z.number(), pausedAt: z.string().nullable(), jobTitle: z.string(),
   consentVersion: z.string(), consentText: z.string(), currentQuestion: z.object({ seq: z.number(), text: z.string(), intent: z.string(),
     mandatory: z.boolean().optional(), assessmentMode: z.enum(["scored", "information", "eligibility"]).optional(), topicKey: z.string().nullable().optional() }).nullable(),
+  formalText: z.boolean().optional(),
   mode: z.enum(["text", "voice"]), cameraRequired: z.boolean(), cameraActive: z.boolean(), microphoneActive: z.boolean(), textFallback: z.boolean(),
   speechServerEnabled: z.boolean(), speechProcessorLabel: z.string(),
   ttsServerEnabled: z.boolean().default(false),

@@ -1,0 +1,168 @@
+.formal-workspace {
+  display: grid;
+  align-content: start;
+  gap: 24px;
+}
+
+.formal-hero {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  padding: clamp(24px, 5vw, 48px);
+  border-radius: 20px;
+  color: #fff;
+  background: radial-gradient(ellipse at 90% 100%, #326c55, transparent 65%),
+    linear-gradient(125deg, #143c37, #215447);
+}
+
+.formal-hero::after {
+  position: absolute;
+  z-index: -1;
+  top: -140px;
+  right: -110px;
+  width: 425px;
+  height: 425px;
+  border: 1px solid #f0ffed35;
+  border-radius: 50%;
+  box-shadow: 0 0 0 35px #f0ffed12, 0 0 0 70px #f0ffed10, 0 0 0 105px #f0ffed0a;
+  content: "";
+  pointer-events: none;
+}
+
+.formal-hero h1 { font-size: clamp(26px, 4vw, 40px); }
+.formal-hero .eyebrow { color: #bfe4c8; }
+.formal-hero p:not(.eyebrow) { max-width: 42em; color: #ebf4ec; }
+.formal-hero .button-row, .formal-tags { margin-top: 22px; }
+.workspace-hero { margin-bottom: 24px; }
+.workspace-hero .button.primary { border-color: #d7f0dc; background: #d7f0dc; color: #143c37; }
+.workspace-hero .button.primary:hover { background: #fff; color: #143c37; }
+.workspace-hero .button.secondary { border-color: #edf9f18c; color: white; background: transparent; }
+.workspace-hero .button.secondary:hover { background: #ffffff20; }
+.formal-hero :is(a, button):focus-visible { outline-color: #fff; }
+
+.formal-tags { display: flex; flex-wrap: wrap; gap: 8px; }
+.formal-tags > * {
+  padding: 5px 12px;
+  border: 1px solid #edf9f157;
+  border-radius: 20px;
+  background: #ffffff0f;
+  color: #fff;
+  font-size: 12px;
+}
+.formal-tags :is(a, button):hover { background: #ffffff24; }
+
+.formal-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2.2fr) minmax(218px, 1fr);
+  align-items: start;
+  gap: 20px;
+}
+
+.formal-form, .formal-login, .formal-guide, .record-section {
+  min-width: 0;
+  padding: clamp(18px, 3vw, 30px);
+  border-radius: 16px;
+  box-shadow: 0 10px 26px #143c3708;
+}
+
+.formal-form fieldset { min-width: 0; margin: 0 0 22px; padding: 0 0 16px; border-bottom: 1px solid var(--line); }
+.formal-form legend { width: 100%; margin-bottom: 14px; font-size: 17px; font-weight: 650; }
+.formal-index {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin-right: 6px;
+  border-radius: 9px;
+  background: var(--mint);
+  color: var(--brand);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.formal-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.formal-form :is(input, textarea, select), .formal-login input { background: #fafcf9; border-radius: 9px; }
+.formal-form :is(input, textarea, select)::placeholder { color: #667572; }
+.formal-form-actions { display: flex; justify-content: flex-end; }
+.formal-login form { max-width: 24rem; }
+
+.formal-guide { background: #f9fcf7; }
+.formal-guide ol { counter-reset: flow; list-style: none; margin: 0; padding: 0; }
+.formal-guide li { position: relative; margin-top: 16px; padding-left: 35px; }
+.formal-guide li::before {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid #cce0d1;
+  border-radius: 50%;
+  color: var(--brand);
+  font-size: 11px;
+  counter-increment: flow;
+  content: counter(flow);
+}
+.formal-guide li p { margin: 4px 0 16px; color: var(--muted); }
+
+.record-section .table-wrap { margin: 0 0 16px; }
+.record-section table td { min-width: 96px; overflow-wrap: anywhere; }
+.record-meta, .evaluation-head, .evaluation-grid { display: grid; gap: 10px; }
+.record-meta { grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 20px 0 0; }
+.record-meta > div, .evaluation-head > div, .evaluation-grid article {
+  padding: 13px 15px;
+  border: 1px solid #e2ebe3;
+  border-radius: 12px;
+  background: #f8fbf7;
+  overflow-wrap: anywhere;
+}
+.record-meta dt, .evaluation-head span { font-size: 12px; color: var(--muted); }
+.record-meta dd { margin: 4px 0 0; font-weight: 600; }
+.evaluation-head, .evaluation-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 14px 0; }
+.evaluation-head strong { display: block; color: var(--brand); font-size: 22px; }
+.evaluation-grid article > div { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: start; gap: 6px; }
+.evaluation-grid blockquote { margin: 8px 0 0; padding: 7px 10px; border-left: 3px solid #99bca4; background: #fff; }
+.evaluation-grid blockquote footer { margin-top: 4px; color: var(--muted); font-size: 11px; }
+.record-breakdown { margin: 16px 0; }
+.record-breakdown li span { display: block; color: var(--muted); }
+.record-transcript { display: grid; gap: 10px; list-style: none; padding: 0; margin: 16px 0 0; }
+.record-transcript li {
+  width: fit-content;
+  max-width: min(100%, 48rem);
+  padding: 12px 15px;
+  border: 1px solid #e2ebe3;
+  border-radius: 5px 13px 13px 13px;
+  background: #f6f8f5;
+  overflow-wrap: anywhere;
+}
+.record-transcript li[data-role="candidate"] { justify-self: end; background: #eaf4eb; border-radius: 13px 5px 13px 13px; }
+.record-transcript li span { font-size: 11px; font-weight: 600; color: var(--brand); }
+.record-transcript p { margin: 3px 0 0; white-space: pre-wrap; }
+
+.formal-candidate {
+  background: radial-gradient(ellipse at 50% 8%, #e2efe5, transparent 420px), var(--canvas);
+}
+.formal-candidate .candidate-heading {
+  padding: 24px 22px 18px;
+  margin-bottom: 20px;
+  border-radius: 18px;
+  background: #183f38;
+  color: #fff;
+}
+.formal-candidate .candidate-heading :is(.eyebrow, .muted) { color: #cbe4d1; }
+.formal-candidate .candidate-heading h1 { overflow-wrap: anywhere; }
+.formal-candidate .candidate-card { border-radius: 16px; box-shadow: 0 8px 24px #143c370c; }
+.formal-candidate .current-question { padding: 16px; border-radius: 12px; background: #f0f6ef; overflow-wrap: anywhere; }
+.formal-candidate .answer-input { border-color: #b9cfc2; background: #fcfefb; }
+
+@media (max-width: 880px) {
+  .formal-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 700px) {
+  .sidebar { flex-wrap: wrap; gap: 10px; }
+  .sidebar nav { flex-wrap: wrap; gap: 3px; }
+  .formal-fields, .evaluation-grid { grid-template-columns: 1fr; gap: 8px; }
+  .record-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .formal-form-actions .button { width: 100%; }
+}

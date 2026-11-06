@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import "./report.css";
+import "./formal.css";
 
 export const metadata: Metadata = {
   title: "AI 面试官 · 结构化面试与证据化评分",

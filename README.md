@@ -98,7 +98,34 @@ pnpm dev
 
 Python 解释器按 `.venv`、`.venv-clean`、`.venv311`、PATH 的顺序查找。可在终端设置 `$env:PYTHON_EXECUTABLE = (Resolve-Path '.\.venv-clean\Scripts\python.exe').Path` 显式使用隔离环境。`pnpm verify` 一次运行 TS 和 Python 门禁。Playwright 浏览器就绪后可用 `pnpm test:e2e` 单独运行浏览器套件。
 
-已用本机 Python 3.11.9、Chromium 合成设备轨道和真实 Whisper base 跑通录音、转写、确认后提交、刷新恢复、评分报告及人工复核。物理麦克风、摄像头和实际播报声音需在使用设备上复测。详见 [D52](DECISIONS.md#d52-独立后端的网页语音联调)。
+### 正式文字面试
+
+在仓库根目录启动正式面试网页。以下环境变量让本次运行使用 Python 3.11、fake 模型和文字流程。联合启动器会启动 FastAPI 和 Next.js。
+
+```powershell
+$env:PYTHON_EXECUTABLE = (Resolve-Path '.\.venv-clean\Scripts\python.exe').Path
+$env:LLM_PROVIDER = 'fake'
+$env:DEMO_MODE = 'true'
+$env:STT_PROVIDER = 'auto'
+$env:STT_BASE_URL = ''
+$env:STT_MODEL = ''
+$env:TTS_PROVIDER = 'local'
+node scripts/dev.mjs
+```
+
+1. 打开 [正式面试发起页](http://127.0.0.1:3000/recruiter/formal)，登录招聘工作台，填岗位 JD、简历和固定题，每行一题。复制生成的候选人链接。
+2. 用链接进入候选人页，阅读并明确同意后逐题作答。已提交的回答和当前题号会保存在服务端，刷新可继续。
+3. 打开 [管理员面试记录](http://127.0.0.1:3000/admin/interviews)，独立登录。可查看进行中的场次。已结束场次可点击「生成面试评价」，查看分数和对应原话。
+
+fake 模型生成确定性演示评价，请使用合成资料。正式使用时沿用仓库内的模型配置及独立管理员凭证。已有面试记录由当前数据库配置决定。
+
+#### API
+
+招聘者用 `POST /api/formal-interviews` 一次录入岗位、候选人、JD、简历和 1–8 道固定题。后端按录入顺序提问，再补充 3 道围绕岗位和简历的问题。候选人经独立邀请和知情同意后逐题作答。末题提交后进入待评价。
+
+独立管理员通过 `GET /api/admin/interviews` 分页查阅保留期内各状态的场次，通过 `GET /api/admin/interviews/{id}` 查看详情，通过 `POST /api/admin/interviews/{id}/score` 为已结束面试生成证据评价。撤回后只展示场次状态和基本信息。评价复用现有证据校验和人工复核机制。
+
+历史网页语音联调的环境和范围见 [D52](DECISIONS.md#d52-独立后端的网页语音联调)。
 
 ## 启动轻量练习网页
 

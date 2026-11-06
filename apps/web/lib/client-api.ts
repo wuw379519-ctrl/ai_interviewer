@@ -16,13 +16,16 @@ export async function api<T>(path: string, schema: z.ZodType<T, z.ZodTypeDef, un
   return schema.parse(raw);
 }
 
-export async function streamTurn(id: string, token: string, key: string, body: { action: string; content?: string }, onText: (text: string) => void) {
+export type TurnSubmission = { action: "answer" | "repeat" | "skip"; content?: string; expectedQuestionSeq?: number };
+
+export async function streamTurn(id: string, token: string, key: string, body: TurnSubmission, onText: (text: string) => void) {
   const response = await fetch(`/api/interviews/${id}/turns`, { method: "POST", headers: {
     "Content-Type": "application/json", Authorization: `Bearer ${token}`, "Idempotency-Key": key,
   }, body: JSON.stringify(body) });
   if (!response.ok) {
     const raw: unknown = await response.json();
-    throw new Error(apiErrorSchema.safeParse(raw).data?.error.message ?? "提交失败");
+    const error = apiErrorSchema.safeParse(raw).data?.error;
+    throw new ClientApiError(error?.code ?? "UNKNOWN", error?.message ?? "提交失败");
   }
   const reader = response.body?.getReader();
   if (!reader) throw new Error("流连接未建立");
