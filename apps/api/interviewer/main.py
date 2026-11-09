@@ -121,9 +121,14 @@ def create_app(configuration: Settings | None = None) -> FastAPI:
         if path == "/api/feishu/events":
             service.auth.limit("feishu:events:" + (request.client.host if request.client else "local"), 60)
             return
-        if path in {"/api/auth/login", "/api/admin/login", "/api/feishu/oauth/callback", "/api/feishu/oauth/start"}:
+        host = request.client.host if request.client else "local"
+        if path == "/api/feishu/oauth/start":
             service.auth.origin(request)
-            service.auth.limit("login:" + (request.client.host if request.client else "local"), 100 if settings.demo else 10)
+            service.auth.limit(f"feishu:start:{host}", 60)
+            return
+        if path in {"/api/auth/login", "/api/admin/login", "/api/feishu/oauth/callback"}:
+            service.auth.origin(request)
+            service.auth.limit(f"login:{host}", 100 if settings.demo else 10)
             return
         matched = re.fullmatch(r"/api/interviews/([^/]+)/([^/]+)", path)
         if matched and matched[2] in CANDIDATE_ACTIONS:
