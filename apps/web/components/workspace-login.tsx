@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
 import { api, ClientApiError } from "@/lib/client-api";
+import { FeishuLoginButton } from "./feishu-login-button";
 import { Brand } from "./shell";
 
 const loginSchema = z.object({ ok: z.literal(true), role: z.enum(["admin", "recruiter"]) });
@@ -52,6 +53,7 @@ export function WorkspaceLogin({ admin = false, demo, onReady }: {
         {busy ? "正在登录…" : demo ? admin ? "进入演示管理台" : "进入演示工作台" : "登录"}
       </button>
     </form>
+    {!admin && !demo && <div className="button-row" style={{ marginTop: "1rem" }}><FeishuLoginButton /></div>}
     {error && <p role="alert" className="error">{error}</p>}
   </section>;
 }

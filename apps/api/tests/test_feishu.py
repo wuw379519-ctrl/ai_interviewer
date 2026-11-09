@@ -217,7 +217,7 @@ def test_upstream_failure_no_cookie(configured: tuple[TestClient, FakeFeishu]) -
 
 
 def test_oauth_start_uses_separate_rate_limit_bucket(configured: tuple[TestClient, FakeFeishu]) -> None:
-    client, _port = configured
+    _client, _port = configured
     # Non-demo apps use login bucket 10/min; start uses feishu:start 60/min and must stay independent.
     app = create_app(settings(demo=False, environment="production", secret=SECRET))
     app.state.feishu = FakeFeishu()
@@ -226,6 +226,19 @@ def test_oauth_start_uses_separate_rate_limit_bucket(configured: tuple[TestClien
             limited.post("/api/auth/login", json={"username": "nope", "password": "nope"})
         start = limited.get("/api/feishu/oauth/start", follow_redirects=False)
         assert start.status_code == 302
+
+
+def test_oauth_callback_shares_login_rate_limit_bucket() -> None:
+    app = create_app(settings(demo=False, environment="production", secret=SECRET))
+    port = FakeFeishu(open_id="ou_recruiter")
+    app.state.feishu = port
+    with TestClient(app) as limited:
+        for _ in range(10):
+            limited.post("/api/auth/login", json={"username": "nope", "password": "nope"})
+        state = issue_state(limited)
+        blocked = post_callback(limited, "auth-code", state)
+        assert blocked.status_code == 429
+        assert port.exchange_calls == 0
 
 
 def test_oauth_start_redirect_and_nonce_cookie(configured: tuple[TestClient, FakeFeishu]) -> None:
