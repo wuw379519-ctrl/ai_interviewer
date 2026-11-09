@@ -196,7 +196,7 @@ def create_app(configuration: Settings | None = None) -> FastAPI:
 
     def login(request: Request, body: LoginInput, role: str) -> Response:
         configured = settings.admin_password if role == "admin" else settings.recruiter_password
-        if not settings.demo and (not configured or not hmac.compare_digest(body.access_code, configured)):
+        if not settings.demo and (not configured or not hmac.compare_digest(body.access_code.encode(), configured.encode())):
             raise DomainError("UNAUTHORIZED", "访问码不正确")
         response = send(Result({"ok": True, "demo": settings.demo}))
         response.set_cookie(f"aii_{role}", service.auth.session(int(time.time() * 1000) + 8 * 3600000, role),

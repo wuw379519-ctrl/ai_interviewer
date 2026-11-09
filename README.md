@@ -127,6 +127,27 @@ fake 模型生成确定性演示评价，请使用合成资料。正式使用时
 
 历史网页语音联调的环境和范围见 [D52](DECISIONS.md#d52-独立后端的网页语音联调)。
 
+## 公网访问
+
+公网模式使用现有数据库和模型配置，运行 FastAPI 与 Next.js 的生产入口。它要求一个固定的 HTTPS 网址，关闭演示登录和服务端语音识别。候选人邀请链接使用招聘者打开页面时的 HTTPS 网址。
+
+在本机 PowerShell 执行。把 `interview.example.com` 换成你配置的域名。
+
+```powershell
+Set-Location D:\work\ai_interviewer_python
+$env:PYTHON_EXECUTABLE = (Resolve-Path '.\.venv-clean\Scripts\python.exe').Path
+node scripts/dev.mjs --public-access
+pnpm build
+node scripts/dev.mjs --public-url https://interview.example.com
+```
+
+公网前端监听 `127.0.0.1:3100`，与开发前端的 `3000` 分开。FastAPI 监听 `127.0.0.1:8000`。将公网 HTTPS 入口的所有路径转发到 `http://127.0.0.1:3100`，并让代理保留浏览器的 `Origin`、`Cookie`、`Set-Cookie` 和 SSE 响应流。按网络条件配置以下一种入口。
+
+- 有域名和可达的公网 IP 时，可将 DNS 指向主机，放行 TCP 80/443 后运行 `caddy reverse-proxy --from interview.example.com --to 127.0.0.1:3100`。主机经过路由器时将这两个端口转发到 Caddy。[Caddy 反向代理文档](https://caddyserver.com/docs/quick-starts/reverse-proxy)
+- 位于内网时，可在同一台电脑运行已配置的 Cloudflare Tunnel，将固定域名的 Published application route 指向 `http://127.0.0.1:3100`。面试答题使用 SSE，因此使用固定域名的隧道，临时 Quick Tunnel 缺少 SSE 支持。[Cloudflare Tunnel 配置](https://developers.cloudflare.com/tunnel/get-started/) · [Quick Tunnel 限制](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/#limitations)
+
+公网入口可从另一张网络打开 `https://<你的域名>/api/ready` 检查。招聘者打开 `/recruiter/formal`，管理员打开 `/admin/interviews`。两种网页访问码由 `--public-access` 在本机显示。首次运行生成两组独立随机访问码与签名密钥，保存在 Git 忽略的 `.data/public-access.json`。后续启动复用同一组。通过密钥管理器注入时，同时设置 `RECRUITER_PASSWORD`、`ADMIN_PASSWORD` 和 `AUTH_SECRET` 三个进程环境变量，网页访问码与签名密钥分别使用独立值。
+
 ## 启动轻量练习网页
 
 页面在 `apps/practice`，使用原生 HTML、CSS 和 Fetch API。以下两组命令在各自的 PowerShell 终端运行，使用本仓库的 `.venv-clean`，直接打开 `http://localhost:5173`。
