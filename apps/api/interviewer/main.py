@@ -14,7 +14,7 @@ from fastapi import FastAPI, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.responses import JSONResponse, RedirectResponse, Response, StreamingResponse
 from pydantic import ValidationError
 from .repository import StorageSession
 from starlette.exceptions import HTTPException
@@ -28,7 +28,8 @@ from .contracts import (CandidateCreate, CleanupInput, CompetencySet, ConsentInp
                         ResumeText, RetentionInput, ReviewInput, RevisionInput, ScoreInput,
                         TurnInput, json_object)
 from .errors import DomainError
-from .feishu import FakeFeishu, FeishuPort, LiveFeishu, STATE_STORE, open_id_fingerprint, public_status, role_for_open_id
+from .feishu import (FakeFeishu, FeishuPort, LiveFeishu, OAUTH_NONCE_COOKIE, STATE_STORE, oauth_authorize_url,
+                     open_id_fingerprint, public_status, role_for_open_id, state_nonce)
 from .operations import Operations
 from .service import Result, Service
 from .settings import Settings
@@ -115,9 +116,12 @@ def create_app(configuration: Settings | None = None) -> FastAPI:
         if path in {CHAT_PATH, SESSION_PATH}:
             practice.admit(request)
             return
-        if path in {"/api/health", "/api/ready", "/api/openapi.json", "/api/feishu/status", "/api/feishu/events"}:
+        if path in {"/api/health", "/api/ready", "/api/openapi.json", "/api/feishu/status"}:
             return
-        if path in {"/api/auth/login", "/api/admin/login", "/api/feishu/oauth/callback"}:
+        if path == "/api/feishu/events":
+            service.auth.limit("feishu:events:" + (request.client.host if request.client else "local"), 60)
+            return
+        if path in {"/api/auth/login", "/api/admin/login", "/api/feishu/oauth/callback", "/api/feishu/oauth/start"}:
             service.auth.origin(request)
             service.auth.limit("login:" + (request.client.host if request.client else "local"), 100 if settings.demo else 10)
             return
@@ -230,10 +234,26 @@ def create_app(configuration: Settings | None = None) -> FastAPI:
     def feishu_status() -> Response:
         return send(Result(public_status(settings)))
 
+    @app.get("/api/feishu/oauth/start", tags=["identity"])
+    def feishu_oauth_start() -> Response:
+        feishu.require_feishu_configured(settings)
+        if not settings.feishu_oauth_redirect_uri.strip():
+            raise DomainError("FEISHU_NOT_CONFIGURED", "飞书应用未配置")
+        state = STATE_STORE.issue(service.auth)
+        response = RedirectResponse(oauth_authorize_url(settings, state), status_code=302)
+        response.set_cookie(
+            OAUTH_NONCE_COOKIE, state_nonce(state), max_age=480, httponly=True,
+            secure=settings.environment == "production", samesite="lax", path="/",
+        )
+        return response
+
     @app.post("/api/feishu/oauth/callback", tags=["identity"])
     def feishu_oauth_callback(request: Request, body: FeishuOAuthInput) -> Response:
         feishu.require_feishu_configured(settings)
         STATE_STORE.consume(service.auth, body.state)
+        cookie_nonce = request.cookies.get(OAUTH_NONCE_COOKIE, "")
+        if not cookie_nonce or not hmac.compare_digest(cookie_nonce, state_nonce(body.state)):
+            raise DomainError("FEISHU_STATE_INVALID", "飞书登录状态无效")
         port = cast(FeishuPort, request.app.state.feishu)
         open_id = port.exchange_code(body.code)
         role = role_for_open_id(settings, open_id)
@@ -242,6 +262,7 @@ def create_app(configuration: Settings | None = None) -> FastAPI:
         response = send(Result({"ok": True, "role": role}))
         other = "recruiter" if role == "admin" else "admin"
         response.delete_cookie(f"aii_{other}", path="/", secure=settings.environment == "production", httponly=True, samesite="strict")
+        response.delete_cookie(OAUTH_NONCE_COOKIE, path="/", secure=settings.environment == "production", httponly=True, samesite="lax")
         response.set_cookie(f"aii_{role}", service.auth.session(int(time.time() * 1000) + 8 * 3600000, role),
                             max_age=8 * 3600, httponly=True, secure=settings.environment == "production", samesite="strict", path="/")
         with database.unit_of_work() as connection:
@@ -264,8 +285,7 @@ def create_app(configuration: Settings | None = None) -> FastAPI:
         event_type = str(payload.get("type") or "unknown")
         if isinstance(header, dict) and header.get("event_type"):
             event_type = str(header["event_type"])
-        with database.unit_of_work() as connection:
-            service.audit(connection, "feishu.event_ignored", "workspace", {"eventType": event_type[:80]})
+        logging.getLogger("interviewer").info("feishu_event_ignored event_type=%s", event_type[:80])
         return send(Result({"ok": True}))
 
     @app.post("/api/admin/logout", tags=["identity"])
@@ -502,7 +522,8 @@ def create_app(configuration: Settings | None = None) -> FastAPI:
             operation["responses"].pop("422", None)
             suffix = path.rsplit("/", 1)[-1]
             public = path in {"/api/health", "/api/ready", "/api/auth/login", "/api/admin/login",
-                              "/api/feishu/status", "/api/feishu/oauth/callback", "/api/feishu/events"}
+                              "/api/feishu/status", "/api/feishu/oauth/start", "/api/feishu/oauth/callback",
+                              "/api/feishu/events"}
             admin = path.startswith("/api/admin/") or path == "/api/candidates/{candidate_id}" and method in {"get", "delete"}
             candidate = path.startswith("/api/interviews/") and suffix in CANDIDATE_ACTIONS
             operation["security"] = [] if public else [{"CandidateBearer": []}] if candidate else [{"AdminSession": []}, {"AdminApiKey": []}] if admin else [{"RecruiterSession": []}, {"RecruiterApiKey": []}]

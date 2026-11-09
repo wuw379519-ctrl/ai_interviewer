@@ -641,3 +641,5 @@ Python 3.11.9 的 `pnpm verify` 通过，Vitest 160 项通过，pytest 197 项�
 删除根目录 Node `integrations/feishu/`；配置唯一来源为 Python `Settings` 与 `/api/feishu/*`。前端 `getFeishuStatus()` 同源拉取公开状态，不再构建期读 env，不暴露 `NEXT_PUBLIC_FEISHU_*`。密钥仅留在 `apps/web/integrations/feishu/server.ts`（`import "server-only"` 本地 shim，因禁止新增 npm 依赖）与 Python 进程。出网调用只在 Python：`FeishuPort` / `LiveFeishu` / `FakeFeishu`；OAuth state 为 8 分钟一次性 HMAC；事件支持 url_verification 与 AES-CBC 解密。未配置返回 `FEISHU_NOT_CONFIGURED`。登录页未接线，`/api/auth/login` 与 `/api/admin/login` 行为不变。无新表、无新依赖。
 
 **回退**：移除 `apps/api/interviewer/feishu.py`、相关路由与 `apps/web/integrations/feishu/`，并还原 Settings / `.env.example` / README 飞书段落。
+
+本轮补丁：增加 `GET /api/feishu/oauth/start`（nonce cookie 防 CSRF）、事件端强制 verification token 且未知事件只打日志不写审计、换码改为 authen v2、删除前端 `server-only` shim（密钥仅 Python）。若将来 Next 服务端要读密钥，再引入官方 `server-only` 并另立决策。

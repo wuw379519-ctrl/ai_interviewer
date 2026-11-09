@@ -1,6 +1,6 @@
 /**
  * Feishu frontend access points (skeleton).
- * Secrets live in `./server` (server-only) and are not re-exported here.
+ * Secrets live only in Python Settings — not on the frontend.
  */
 
 export type { FeishuPublicConfig } from "./config";

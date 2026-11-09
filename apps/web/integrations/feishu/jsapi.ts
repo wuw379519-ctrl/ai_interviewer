@@ -12,7 +12,7 @@ export async function initFeishuJsapi(status: FeishuPublicConfig): Promise<Feish
   }
   // TODO: load Feishu JSSDK, then call tt.config / tt.requestAccess with appId.
   void status.appId;
-  return { status: "not_implemented", message: "飞书 JSAPI 初始化骨架已就位，真实 SDK 调用待实现。" };
+  return { status: "not_implemented", message: "飞书 JSAPI 尚未实现。" };
 }
 
 export async function requestFeishuAccess(
@@ -20,8 +20,8 @@ export async function requestFeishuAccess(
   _scopes: readonly string[] = [],
 ): Promise<FeishuResult> {
   if (!status.configured || !status.appId) {
-    return { status: "not_configured", message: "飞书应用未配置，跳过 requestAccess。" };
+    return { status: "not_configured", message: "飞书应用未配置。" };
   }
   // TODO: invoke tt.requestAccess({ scopeList: [...] }) when SDK is wired.
-  return { status: "not_implemented", message: "requestAccess 占位：尚未接入真实飞书 JSAPI。" };
+  return { status: "not_implemented", message: "requestAccess 尚未实现。" };
 }

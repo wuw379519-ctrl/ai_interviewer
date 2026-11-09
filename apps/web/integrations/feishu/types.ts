@@ -1,18 +1,12 @@
 /** Shared Feishu frontend types (skeleton — no live SDK binding yet). */
 
-export type FeishuStatusValue = "not_configured" | "not_implemented" | "ready";
+export type FeishuStatusValue = "not_configured" | "not_implemented";
 
 export type FeishuPublicConfig = {
   configured: boolean;
   appId: string;
   oauthRedirectUri: string;
-};
-
-export type FeishuServerSecrets = {
-  appSecret: string;
-  verificationToken: string;
-  encryptKey: string;
-  botWebhook: string;
+  loginEnabled: boolean;
 };
 
 export type FeishuUserProfile = {

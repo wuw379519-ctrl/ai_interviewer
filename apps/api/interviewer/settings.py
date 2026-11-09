@@ -63,6 +63,7 @@ class Settings(BaseModel):
     feishu_encrypt_key: str = ""
     feishu_api_base_url: str = "https://open.feishu.cn"
     feishu_oauth_redirect_uri: str = ""
+    feishu_scopes: str = ""
     feishu_recruiter_open_ids: str = ""
     feishu_admin_open_ids: str = ""
 
@@ -110,6 +111,7 @@ class Settings(BaseModel):
                    feishu_encrypt_key=env.get("FEISHU_ENCRYPT_KEY", ""),
                    feishu_api_base_url=env.get("FEISHU_API_BASE_URL", "https://open.feishu.cn"),
                    feishu_oauth_redirect_uri=env.get("FEISHU_OAUTH_REDIRECT_URI", ""),
+                   feishu_scopes=env.get("FEISHU_SCOPES", ""),
                    feishu_recruiter_open_ids=env.get("FEISHU_RECRUITER_OPEN_IDS", ""),
                    feishu_admin_open_ids=env.get("FEISHU_ADMIN_OPEN_IDS", ""))
 

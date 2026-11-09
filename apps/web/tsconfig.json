@@ -17,9 +17,6 @@
     "paths": {
       "@/*": [
         "./*"
-      ],
-      "server-only": [
-        "./shims/server-only.ts"
       ]
     }
   },

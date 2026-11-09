@@ -8,7 +8,10 @@ import secrets
 import threading
 import time
 from dataclasses import dataclass, field
+from collections.abc import Callable
 from typing import Protocol
+from urllib.parse import urlencode
+
 import httpx
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
@@ -22,6 +25,8 @@ OAUTH_STATE_TTL_MS = 8 * 60 * 1000
 OAUTH_STATE_CAP = 1000
 TOKEN_SKEW_SEC = 60
 REQUEST_TIMEOUT_SEC = 5.0
+FEISHU_AUTHORIZE_URL = "https://accounts.feishu.cn/open-apis/authen/v1/authorize"
+OAUTH_NONCE_COOKIE = "feishu_oauth_nonce"
 
 
 def _split_ids(value: str) -> set[str]:
@@ -55,6 +60,22 @@ def public_status(settings: Settings) -> Object:
     }
 
 
+def oauth_authorize_url(settings: Settings, state: str) -> str:
+    params: dict[str, str] = {
+        "client_id": settings.feishu_app_id,
+        "redirect_uri": settings.feishu_oauth_redirect_uri,
+        "state": state,
+    }
+    scopes = settings.feishu_scopes.strip()
+    if scopes:
+        params["scope"] = scopes
+    return f"{FEISHU_AUTHORIZE_URL}?{urlencode(params)}"
+
+
+def state_nonce(state: str) -> str:
+    return state.split(".", 1)[0]
+
+
 class FeishuPort(Protocol):
     def exchange_code(self, code: str) -> str: ...
 
@@ -86,10 +107,12 @@ class FakeFeishu:
 
 
 class LiveFeishu:
-    def __init__(self, settings: Settings, transport: httpx.BaseTransport | None = None) -> None:
+    def __init__(self, settings: Settings, transport: httpx.BaseTransport | None = None,
+                 clock: Callable[[], float] | None = None) -> None:
         require_feishu_configured(settings)
         self.settings = settings
         self.transport = transport
+        self._clock = clock or time.monotonic
         self._token = ""
         self._token_expires = 0.0
         self._lock = threading.RLock()
@@ -102,6 +125,21 @@ class LiveFeishu:
             trust_env=False,
             transport=self.transport,
         )
+
+    def _parse_business_code(self, payload: Object) -> int:
+        raw = payload.get("code", 0)
+        if raw is None:
+            return 0
+        if isinstance(raw, bool):
+            raise DomainError("FEISHU_UPSTREAM_FAILED", "飞书上游调用失败")
+        if isinstance(raw, int):
+            return raw
+        if isinstance(raw, str):
+            try:
+                return int(raw)
+            except ValueError as error:
+                raise DomainError("FEISHU_UPSTREAM_FAILED", "飞书上游调用失败") from error
+        raise DomainError("FEISHU_UPSTREAM_FAILED", "飞书上游调用失败")
 
     def _request(self, method: str, path: str, *, json_body: Object | None = None,
                  headers: dict[str, str] | None = None) -> Object:
@@ -120,7 +158,7 @@ class LiveFeishu:
             raise DomainError("FEISHU_UPSTREAM_FAILED", "飞书上游响应无效") from error
         if not isinstance(payload, dict):
             raise DomainError("FEISHU_UPSTREAM_FAILED", "飞书上游响应无效")
-        if response.status_code >= 400 or int(payload.get("code", 0) or 0) != 0:
+        if response.status_code >= 400 or self._parse_business_code(payload) != 0:
             raise DomainError("FEISHU_UPSTREAM_FAILED", "飞书上游调用失败")
         data = payload.get("data", payload)
         if not isinstance(data, dict):
@@ -129,7 +167,8 @@ class LiveFeishu:
 
     def tenant_access_token(self) -> str:
         with self._lock:
-            if self._token and self._token_expires - TOKEN_SKEW_SEC > time.monotonic():
+            now = float(self._clock())
+            if self._token and self._token_expires - TOKEN_SKEW_SEC > now:
                 return self._token
             data = self._request(
                 "POST",
@@ -138,22 +177,47 @@ class LiveFeishu:
             )
             token = str(data.get("tenant_access_token") or "")
             expire_raw = data.get("expire")
-            expire = int(str(expire_raw)) if isinstance(expire_raw, (int, str)) and str(expire_raw).isdigit() else 0
+            try:
+                expire = int(expire_raw) if isinstance(expire_raw, int) else int(str(expire_raw))
+            except (TypeError, ValueError):
+                expire = 0
             if not token or expire <= 0:
                 raise DomainError("FEISHU_UPSTREAM_FAILED", "飞书上游调用失败")
             self._token = token
-            self._token_expires = time.monotonic() + expire
+            self._token_expires = now + expire
             return token
 
     def exchange_code(self, code: str) -> str:
-        token = self.tenant_access_token()
-        data = self._request(
-            "POST",
-            "open-apis/authen/v1/access_token",
-            json_body={"grant_type": "authorization_code", "code": code},
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        open_id = str(data.get("open_id") or "")
+        try:
+            with self._client() as client:
+                response = client.request(
+                    "POST",
+                    "open-apis/authen/v2/oauth/token",
+                    json={
+                        "grant_type": "authorization_code",
+                        "client_id": self.settings.feishu_app_id,
+                        "client_secret": self.settings.feishu_app_secret,
+                        "code": code,
+                        "redirect_uri": self.settings.feishu_oauth_redirect_uri,
+                    },
+                    headers={},
+                )
+        except httpx.TimeoutException as error:
+            raise DomainError("FEISHU_UPSTREAM_FAILED", "飞书上游调用超时") from error
+        except httpx.HTTPError as error:
+            raise DomainError("FEISHU_UPSTREAM_FAILED", "飞书上游调用失败") from error
+        if response.status_code >= 500:
+            raise DomainError("FEISHU_UPSTREAM_FAILED", "飞书上游调用失败")
+        try:
+            payload = response.json()
+        except ValueError as error:
+            raise DomainError("FEISHU_UPSTREAM_FAILED", "飞书上游响应无效") from error
+        if not isinstance(payload, dict):
+            raise DomainError("FEISHU_UPSTREAM_FAILED", "飞书上游响应无效")
+        if response.status_code >= 400 or self._parse_business_code(payload) != 0:
+            raise DomainError("FEISHU_UPSTREAM_FAILED", "飞书上游调用失败")
+        nested = payload.get("data")
+        open_id = str(payload.get("open_id") or (nested.get("open_id") if isinstance(nested, dict) else "") or "")
         if not open_id:
             raise DomainError("FEISHU_UPSTREAM_FAILED", "飞书上游调用失败")
         return open_id
@@ -270,11 +334,13 @@ def event_token(payload: Object) -> str:
 
 def parse_event_body(settings: Settings, body: Object) -> Object:
     require_feishu_configured(settings)
+    if not settings.feishu_verification_token.strip():
+        raise DomainError("FEISHU_NOT_CONFIGURED", "飞书应用未配置")
     payload = body
     if settings.feishu_encrypt_key and "encrypt" in body:
         payload = decrypt_event(settings.feishu_encrypt_key, str(body.get("encrypt") or ""))
     token = event_token(payload)
     expected = settings.feishu_verification_token
-    if expected and (not token or not hmac.compare_digest(token, expected)):
+    if not token or not hmac.compare_digest(token, expected):
         raise DomainError("FEISHU_SIGNATURE_INVALID", "飞书事件签名或解密失败")
     return payload
