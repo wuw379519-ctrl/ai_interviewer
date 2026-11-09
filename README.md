@@ -36,7 +36,7 @@ $env:PYTHONPATH = 'apps/api'
 
 - 健康检查访问 `http://127.0.0.1:8000/api/health`，就绪检查访问 `http://127.0.0.1:8000/api/ready`。
 - API 契约为 `http://127.0.0.1:8000/api/openapi.json`，可用 `python -m interviewer.cli openapi` 导出本地文件。浏览器直接调用 API 可用对应的 API 客户端，应用未启用依赖外部 CDN 的交互式文档。
-- 开发模式可用 `POST /api/auth/login` 和空 JSON 对象建立合成演示会话。候选人 API 接受邀请返回的 `inviteToken` 作为 Bearer 令牌，回答前仍须明确同意。生产设置见 `.env.example`。
+- 网页通过 `POST /api/auth/login` 提交 `username` 与 `password`。本地合成演示会话在显式启用演示模式后可用空 JSON 对象建立。候选人 API 接受邀请返回的 `inviteToken` 作为 Bearer 令牌，回答前仍须明确同意。
 - 已有 PostgreSQL 16 时，填入 `DB_DRIVER=postgres` 和 `DATABASE_URL`，然后用同一迁移命令。已有脱敏快照可通过 `python -m interviewer.cli import-snapshot --file <文件>` 导入空库。
 
 ## 文本与本地音频面试
@@ -92,7 +92,9 @@ pnpm install
 pnpm dev
 ```
 
-打开 `http://127.0.0.1:3000`，FastAPI 默认使用 `127.0.0.1:8000`。端口已被占用时可运行 `node scripts/dev.mjs --web-port 3010 --api-port 8010`，打开 `http://127.0.0.1:3010`。按 `Ctrl+C` 停止两个进程。
+打开 [账号登录页](http://127.0.0.1:3000/login)。首次联合启动生成管理员 `admin` 和招聘者 `recruiter` 的随机密码，保存在 Git 忽略的 `.data/workspace-accounts.json`。在本机分别运行 `node scripts/dev.mjs --show-admin` 或 `node scripts/dev.mjs --show-recruiter` 查看账号与密码。管理员登录一次即可使用面试发起和管理功能。
+
+FastAPI 默认使用 `127.0.0.1:8000`。端口已被占用时可运行 `node scripts/dev.mjs --web-port 3010 --api-port 8010`，打开 `http://127.0.0.1:3010/login`。按 `Ctrl+C` 停止两个进程。
 
 浏览器通过同源 `/api/*` 调用 Next，Next 通过 `PYTHON_API_URL` 转发给 FastAPI。联合启动脚本自动设置转发目标和默认 `APP_BASE_URL`。如果自行指定 `APP_BASE_URL`，请让它与浏览器实际访问的 origin 一致。
 
@@ -105,7 +107,7 @@ Python 解释器按 `.venv`、`.venv-clean`、`.venv311`、PATH 的顺序查找�
 ```powershell
 $env:PYTHON_EXECUTABLE = (Resolve-Path '.\.venv-clean\Scripts\python.exe').Path
 $env:LLM_PROVIDER = 'fake'
-$env:DEMO_MODE = 'true'
+$env:DEMO_MODE = 'false'
 $env:STT_PROVIDER = 'auto'
 $env:STT_BASE_URL = ''
 $env:STT_MODEL = ''
@@ -115,7 +117,7 @@ node scripts/dev.mjs
 
 1. 打开 [正式面试发起页](http://127.0.0.1:3000/recruiter/formal)，登录招聘工作台，填岗位 JD、简历和固定题，每行一题。复制生成的候选人链接。
 2. 用链接进入候选人页，阅读并明确同意后逐题作答。已提交的回答和当前题号会保存在服务端，刷新可继续。
-3. 打开 [管理员面试记录](http://127.0.0.1:3000/admin/interviews)，独立登录。可查看进行中的场次。已结束场次可点击「生成面试评价」，查看分数和对应原话。
+3. 用管理员账号打开 [管理员面试记录](http://127.0.0.1:3000/admin/interviews)。可查看进行中的场次。已结束场次可点击「生成面试评价」，查看分数和对应原话。
 
 fake 模型生成确定性演示评价，请使用合成资料。正式使用时沿用仓库内的模型配置及独立管理员凭证。已有面试记录由当前数据库配置决定。
 
@@ -136,7 +138,7 @@ fake 模型生成确定性演示评价，请使用合成资料。正式使用时
 ```powershell
 Set-Location D:\work\ai_interviewer_python
 $env:PYTHON_EXECUTABLE = (Resolve-Path '.\.venv-clean\Scripts\python.exe').Path
-node scripts/dev.mjs --public-access
+node scripts/dev.mjs --show-admin
 pnpm build
 node scripts/dev.mjs --public-url https://interview.example.com
 ```
@@ -146,7 +148,7 @@ node scripts/dev.mjs --public-url https://interview.example.com
 - 有域名和可达的公网 IP 时，可将 DNS 指向主机，放行 TCP 80/443 后运行 `caddy reverse-proxy --from interview.example.com --to 127.0.0.1:3100`。主机经过路由器时将这两个端口转发到 Caddy。[Caddy 反向代理文档](https://caddyserver.com/docs/quick-starts/reverse-proxy)
 - 位于内网时，可在同一台电脑运行已配置的 Cloudflare Tunnel，将固定域名的 Published application route 指向 `http://127.0.0.1:3100`。面试答题使用 SSE，因此使用固定域名的隧道，临时 Quick Tunnel 缺少 SSE 支持。[Cloudflare Tunnel 配置](https://developers.cloudflare.com/tunnel/get-started/) · [Quick Tunnel 限制](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/#limitations)
 
-公网入口可从另一张网络打开 `https://<你的域名>/api/ready` 检查。招聘者打开 `/recruiter/formal`，管理员打开 `/admin/interviews`。两种网页访问码由 `--public-access` 在本机显示。首次运行生成两组独立随机访问码与签名密钥，保存在 Git 忽略的 `.data/public-access.json`。后续启动复用同一组。通过密钥管理器注入时，同时设置 `RECRUITER_PASSWORD`、`ADMIN_PASSWORD` 和 `AUTH_SECRET` 三个进程环境变量，网页访问码与签名密钥分别使用独立值。
+公网入口可从另一张网络打开 `https://<你的域名>/api/ready` 检查。网页从 `/login` 登录，管理员进入面试记录，招聘者进入发起面试页。公网模式使用同一份本机账号配置。通过密钥管理器注入时，同时设置 `RECRUITER_PASSWORD`、`ADMIN_PASSWORD` 和 `AUTH_SECRET` 三个进程环境变量，可另设 `RECRUITER_USERNAME` 和 `ADMIN_USERNAME`。
 
 ## 启动轻量练习网页
 

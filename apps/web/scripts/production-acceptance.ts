@@ -74,7 +74,7 @@ async function main() {
     const initialProcess = healthSchema.parse(await (await request.get("/api/health")).json()).instanceId;
     assert.equal((await request.get("/api/jobs")).status(), 401);
     assert.equal((await request.post("/api/auth/login", { data: {} })).status(), 401);
-    await page.goto("/"); await page.getByLabel("招聘者访问码").fill(credentials.recruiterPassword); await page.getByRole("button", { name: "登录", exact: true }).click();
+    await page.goto("/"); await page.getByLabel("账号").fill("recruiter"); await page.getByLabel("密码").fill(credentials.recruiterPassword); await page.getByRole("button", { name: "登录", exact: true }).click();
     await page.getByRole("heading", { name: "最近的面试" }).waitFor();
     const session = (await context.cookies()).find((cookie) => cookie.name === "aii_recruiter");
     assert(session?.secure && session.httpOnly && session.sameSite === "Strict", "生产浏览器应保存并使用Secure HttpOnly角色cookie");
@@ -132,6 +132,19 @@ async function main() {
     writeFileSync(path.join(directory, "private-invitation.txt"), voiceUrl, { mode: 0o600 });
     await page.goto("/diagnostics/voice"); await page.getByRole("heading", { name: "真实设备与中文语音联调" }).waitFor();
     assert(await page.getByRole("button", { name: "开启真实摄像头与麦克风测试" }).isDisabled());
+    await page.goto("/login");
+    await page.getByLabel("账号").fill("admin");
+    await page.getByLabel("密码").fill(credentials.adminPassword);
+    await page.getByRole("button", { name: "登录", exact: true }).click();
+    await page.waitForURL("**/admin/interviews");
+    await page.getByRole("heading", { name: "全部场次" }).waitFor();
+    const adminCookies = await context.cookies();
+    assert(adminCookies.some((cookie) => cookie.name === "aii_admin" && cookie.secure && cookie.httpOnly));
+    assert(!adminCookies.some((cookie) => cookie.name === "aii_recruiter"));
+    assert((await request.get("/api/jobs")).ok(), "同一管理员会话应能进入招聘工作台");
+    await page.getByRole("button", { name: "退出管理员" }).click();
+    await page.getByRole("heading", { name: "管理员登录" }).waitFor();
+    assert.equal((await request.get("/api/jobs")).status(), 401);
     const result = { checkedAt: new Date().toISOString(), deployment: "local-production", provider: "fake", database: "isolated-sqlite", authCookie: "secure-httpOnly-strict-browser-verified", questions: 13, scoredQuestions: 8, dimensions: 4, evidence: "all-dimensions-cited", tokens: report.metadata.totalTokens, restart: "report-invitation-and-session-restored", deletion: "synthetic-candidate-erased", physicalDevices: "pending-human-trial", port: 3300, pid: server?.pid };
     writeFileSync(path.join(directory, "result.json"), JSON.stringify(result, null, 2));
     writeFileSync(path.join(root, ".data", "production-latest.json"), JSON.stringify({ directory }, null, 2));

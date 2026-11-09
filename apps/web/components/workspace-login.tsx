@@ -1,8 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { z } from "zod";
 import { api, ClientApiError } from "@/lib/client-api";
+import { Brand } from "./shell";
+
+const loginSchema = z.object({ ok: z.literal(true), role: z.enum(["admin", "recruiter"]) });
 
 export function needsLogin(error: unknown) {
   return error instanceof ClientApiError && ["UNAUTHORIZED", "FORBIDDEN"].includes(error.code);
@@ -11,20 +15,18 @@ export function needsLogin(error: unknown) {
 export function WorkspaceLogin({ admin = false, demo, onReady }: {
   admin?: boolean;
   demo: boolean;
-  onReady: () => Promise<void>;
+  onReady: (role: z.infer<typeof loginSchema>["role"]) => void | Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const role = admin ? "管理员" : "招聘者";
-
-  async function login(accessCode: string) {
+  async function login(body: { username?: string; password?: string }) {
     setBusy(true);
     setError("");
     try {
-      await api(admin ? "/api/admin/login" : "/api/auth/login", z.object({ ok: z.boolean() }), {
-        method: "POST", body: { accessCode },
+      const session = await api(admin ? "/api/admin/login" : "/api/auth/login", loginSchema, {
+        method: "POST", body,
       });
-      await onReady();
+      await onReady(session.role);
     } catch (error) {
       setError(error instanceof Error ? error.message : "登录失败");
     } finally {
@@ -34,17 +36,36 @@ export function WorkspaceLogin({ admin = false, demo, onReady }: {
 
   return <section className="panel formal-login">
     <p className="eyebrow">WORKSPACE ACCESS</p>
-    <h2>{role}登录</h2>
-    <p className="muted">{admin ? "使用独立的管理员会话查阅面试记录。" : "登录后即可配置问题并生成候选人专属邀请。"}</p>
+    <h2>{admin ? "管理员登录" : "工作台登录"}</h2>
+    <p className="muted">{admin ? "请输入管理员账号和密码，登录后可查阅面试记录。" : "使用你的账号和密码进入见微面试工作台。"}</p>
     <form onSubmit={(event) => {
       event.preventDefault();
-      void login(String(new FormData(event.currentTarget).get("accessCode") ?? ""));
+      const fields = new FormData(event.currentTarget);
+      void login(demo ? {} : { username: String(fields.get("username") ?? "").trim(),
+        password: String(fields.get("password") ?? "") });
     }}>
-      {!demo && <label>{role}访问码<input name="accessCode" type="password" autoComplete="current-password" required /></label>}
+      {!demo && <>
+        <label>账号<input name="username" type="text" autoComplete="username" autoCapitalize="none" spellCheck={false} maxLength={64} required /></label>
+        <label>密码<input name="password" type="password" autoComplete="current-password" maxLength={200} required /></label>
+      </>}
       <button className="button primary" disabled={busy}>
-        {busy ? "正在登录…" : demo ? admin ? "进入演示管理台" : "进入演示工作台" : `登录${role}`}
+        {busy ? "正在登录…" : demo ? admin ? "进入演示管理台" : "进入演示工作台" : "登录"}
       </button>
     </form>
     {error && <p role="alert" className="error">{error}</p>}
   </section>;
+}
+
+export function AccountLoginPage({ demo }: { demo: boolean }) {
+  const router = useRouter();
+  return <main className="account-login-page">
+    <div className="account-login-layout">
+      <header className="account-login-intro">
+        <Brand />
+        <h1>登录见微</h1>
+        <p>发起面试、查看回答和评价，统一在工作台完成。</p>
+      </header>
+      <WorkspaceLogin demo={demo} onReady={(role) => router.replace(role === "admin" ? "/admin/interviews" : "/recruiter/formal")} />
+    </div>
+  </main>;
 }

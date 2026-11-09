@@ -24,7 +24,9 @@ class Settings(BaseModel):
     provider: str = "fake"
     demo: bool = True
     secret: str = ""
+    recruiter_username: str = "recruiter"
     recruiter_password: str = ""
+    admin_username: str = "admin"
     admin_password: str = ""
     recruiter_key: str = ""
     admin_key: str = ""
@@ -72,7 +74,8 @@ class Settings(BaseModel):
         database = env.get("DATABASE_URL", "") if env.get("DB_DRIVER") != "sqlite" else ""
         return cls(database_url=database, sqlite_path=env.get("SQLITE_PATH", cls().sqlite_path),
                    environment="production" if production else "development", provider=provider, demo=demo,
-                   secret=env.get("AUTH_SECRET", ""), recruiter_password=env.get("RECRUITER_PASSWORD", ""),
+                   secret=env.get("AUTH_SECRET", ""), recruiter_username=env.get("RECRUITER_USERNAME", "recruiter"),
+                   recruiter_password=env.get("RECRUITER_PASSWORD", ""), admin_username=env.get("ADMIN_USERNAME", "admin"),
                    admin_password=env.get("ADMIN_PASSWORD", ""), recruiter_key=env.get("RECRUITER_API_KEY", ""),
                    admin_key=env.get("ADMIN_API_KEY", ""), app_base_url=env.get("APP_BASE_URL", DEFAULT_APP_BASE_URL),
                    llm_base_url=env.get("LLM_BASE_URL", ""), llm_model=env.get("LLM_MODEL", ""), llm_key=env.get("LLM_API_KEY", ""),
@@ -103,6 +106,8 @@ class Settings(BaseModel):
                 issues.append("RECRUITER_PASSWORD_REQUIRED")
             if not self.demo and not (self.admin_password or self.admin_key):
                 issues.append("ADMIN_IDENTITY_REQUIRED")
+            if not self.demo and (not self.admin_username or not self.recruiter_username or self.admin_username == self.recruiter_username):
+                issues.append("WORKSPACE_USERNAMES_INVALID")
         if self.stt_provider == "whisper" and (not self.stt_model_path or not self.stt_model):
             issues.append("LOCAL_WHISPER_CONFIGURATION_INCOMPLETE")
         if self.tts_provider == "edge" and (not self.tts_allow_external or not self.tts_voice):

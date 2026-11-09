@@ -6589,10 +6589,16 @@
       },
       "LoginInput": {
         "properties": {
-          "accessCode": {
+          "username": {
+            "type": "string",
+            "maxLength": 64,
+            "title": "Username",
+            "default": ""
+          },
+          "password": {
             "type": "string",
             "maxLength": 200,
-            "title": "Accesscode",
+            "title": "Password",
             "default": ""
           }
         },

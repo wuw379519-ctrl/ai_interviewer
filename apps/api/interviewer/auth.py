@@ -45,7 +45,7 @@ class Auth:
         return b64(hmac.digest(self.secret.encode(), value.encode(), "sha256"))
 
     def session(self, expires: int, role: str) -> str:
-        return f"{expires}.{self.digest(f'{role}:{expires}')}"
+        return f"{expires}.{self.digest(f'workspace-account-v1:{role}:{expires}')}"
 
     def valid_session(self, value: str, role: str) -> bool:
         if len(value) > 256:
@@ -87,12 +87,15 @@ class Auth:
         key = self.settings.admin_key if role == "admin" else self.settings.recruiter_key
         if key and hmac.compare_digest(request.headers.get("authorization", ""), f"Bearer {key}"):
             return Actor(role, f"{role}-api", "治理 API" if role == "admin" else "工作空间 API")
-        if not self.valid_session(request.cookies.get(f"aii_{role}", ""), role):
-            if role == "admin" and self.valid_session(request.cookies.get("aii_recruiter", ""), "recruiter"):
-                raise DomainError("FORBIDDEN", "数据治理需要独立管理员登录")
-            raise DomainError("UNAUTHORIZED", "请先登录数据治理管理台" if role == "admin" else "请先登录招聘工作台")
-        self.limit(role, 180 if role == "admin" else 90)
-        return Actor(role, role, "工作空间管理员" if role == "admin" else "工作空间招聘者")
+        if self.valid_session(request.cookies.get(f"aii_{role}", ""), role):
+            self.limit(role, 180 if role == "admin" else 90)
+            return Actor(role, role, "工作空间管理员" if role == "admin" else "工作空间招聘者")
+        if role == "recruiter" and self.valid_session(request.cookies.get("aii_admin", ""), "admin"):
+            self.limit("admin", 180)
+            return Actor("admin", "admin", "工作空间管理员")
+        if role == "admin" and self.valid_session(request.cookies.get("aii_recruiter", ""), "recruiter"):
+            raise DomainError("FORBIDDEN", "请使用管理员账号登录")
+        raise DomainError("UNAUTHORIZED", "请先登录数据治理管理台" if role == "admin" else "请先登录招聘工作台")
 
     def seal(self, value: str) -> str:
         iv = secrets.token_bytes(12)

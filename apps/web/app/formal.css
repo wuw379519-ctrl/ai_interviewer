@@ -84,6 +84,34 @@
 .formal-form :is(input, textarea, select)::placeholder { color: #667572; }
 .formal-form-actions { display: flex; justify-content: flex-end; }
 .formal-login form { max-width: 24rem; }
+.account-login-page {
+  display: grid;
+  min-height: 100dvh;
+  place-items: center;
+  padding: 32px 16px;
+  background: radial-gradient(ellipse at 16% 12%, #dcece0, transparent 60%), var(--canvas);
+}
+.account-login-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  width: min(100%, 860px);
+  gap: 20px;
+}
+.account-login-intro {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  padding: clamp(22px, 5vw, 44px);
+  border-radius: 16px;
+  background: linear-gradient(140deg, #183f38, #2f654d);
+  color: #fff;
+}
+.account-login-intro h1 { margin-top: 28px; }
+.account-login-intro p { margin-bottom: 0; color: #ebf4ec; }
+.account-login-intro .brand-sub { color: #cbe4d1; }
+.account-login-page .formal-login { padding: clamp(22px, 5vw, 44px); }
+.account-login-page .formal-login .button { width: 100%; }
 
 .formal-guide { background: #f9fcf7; }
 .formal-guide ol { counter-reset: flow; list-style: none; margin: 0; padding: 0; }
@@ -160,6 +188,8 @@
 }
 
 @media (max-width: 700px) {
+  .account-login-layout { grid-template-columns: 1fr; }
+  .account-login-intro h1 { margin-top: 14px; }
   .sidebar { flex-wrap: wrap; gap: 10px; }
   .sidebar nav { flex-wrap: wrap; gap: 3px; }
   .formal-fields, .evaluation-grid { grid-template-columns: 1fr; gap: 8px; }

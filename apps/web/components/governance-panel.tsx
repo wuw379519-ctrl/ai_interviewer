@@ -6,12 +6,13 @@ import { auditPageSchema, cleanupPreviewSchema, cleanupResultSchema, erasurePrev
 import { api, ClientApiError } from "@/lib/client-api";
 import { Shell } from "./shell";
 import { OperationsPanel } from "./operations-panel";
+import { WorkspaceLogin } from "./workspace-login";
 
 const workspaceSchema = z.object({ policy: retentionPolicySchema, preview: cleanupPreviewSchema });
 export function GovernancePanel({ demo }: { demo: boolean }) {
   const [workspace, setWorkspace] = useState<z.infer<typeof workspaceSchema>>(), [people, setPeople] = useState<z.infer<typeof governanceCandidatesSchema>>(), [logs, setLogs] = useState<z.infer<typeof auditPageSchema>>();
   const [authorized, setAuthorized] = useState(false), [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [error, setError] = useState(""), [message, setMessage] = useState("");
-  const [accessCode, setAccessCode] = useState(""), [days, setDays] = useState(90), [policyReason, setPolicyReason] = useState(""), [cleanupReason, setCleanupReason] = useState(""), [confirmed, setConfirmed] = useState(false);
+  const [days, setDays] = useState(90), [policyReason, setPolicyReason] = useState(""), [cleanupReason, setCleanupReason] = useState(""), [confirmed, setConfirmed] = useState(false);
   const [lookup, setLookup] = useState("");
   const [action, setAction] = useState(""), [selected, setSelected] = useState<z.infer<typeof erasurePreviewSchema>>(), [confirmation, setConfirmation] = useState(""), [eraseReason, setEraseReason] = useState("");
   const confirmationInput = useRef<HTMLInputElement>(null), pending = useRef(new Map<string, { body: string; key: string }>());
@@ -26,9 +27,6 @@ export function GovernancePanel({ demo }: { demo: boolean }) {
     setBusy(true); setError(""); setMessage("");
     try { await fn(); } catch (error) { setError(error instanceof Error ? error.message : "操作失败，可以重试"); }
     finally { setBusy(false); }
-  }
-  async function login() {
-    await work(async () => { await api("/api/admin/login", z.object({ ok: z.boolean() }), { method: "POST", body: { accessCode } }); setAccessCode(""); await load(); });
   }
   async function savePolicy() {
     if (!workspace) return;
@@ -57,7 +55,7 @@ export function GovernancePanel({ demo }: { demo: boolean }) {
   }
   return <Shell section="数据治理"><main className="workspace governance-workspace"><div className="page-intro"><div><p className="eyebrow">DATA GOVERNANCE</p><h1>让数据有期限，让操作可追溯。</h1><p className="muted">管理员独立登录。删除清除业务内容，操作审计保留最小记录。</p><Link href="/admin/interviews" className="text-button">查看全部面试记录 →</Link></div>{authorized && <button className="button secondary" disabled={busy} onClick={() => void work(async () => { await api("/api/admin/logout", z.object({ ok: z.boolean() }), { method: "POST", body: {} }); setAuthorized(false); setWorkspace(undefined); setPeople(undefined); setLogs(undefined); setSelected(undefined); setEraseReason(""); setPolicyReason(""); setCleanupReason(""); })}>退出管理员</button>}</div>
     {error && <p role="alert" className="error-banner">{error}</p>}{message && <p role="status" className="notice">{message}</p>}
-    {loading ? <p role="status">正在核对管理员权限…</p> : !authorized ? <section className="panel form-panel"><h2>管理员登录</h2><p>招聘者会话不能直接执行删除或修改保留期。{demo ? "当前为虚构数据演示，可单独进入演示管理台。" : "使用独立配置的管理员访问码。"}</p><form onSubmit={(event) => { event.preventDefault(); void login(); }}>{!demo && <label>管理员访问码<input type="password" autoComplete="current-password" value={accessCode} onChange={(event) => setAccessCode(event.target.value)} required /></label>}<button className="button primary" disabled={busy}>{demo ? "进入演示管理台" : "登录管理员"}</button></form></section> : workspace && <>
+    {loading ? <p role="status">正在核对管理员权限…</p> : !authorized ? <WorkspaceLogin admin demo={demo} onReady={load} /> : workspace && <>
       <OperationsPanel />
       <section className="panel form-panel"><div className="section-heading"><div><h2>保留期策略</h2><p>默认90天，可缩短至1–90天。只应用于新资料；新面试不会延长候选人原有资料期限。同意说明展示本场期限。</p></div><span className="pill">v{workspace.policy.revision}</span></div><form onSubmit={(event) => { event.preventDefault(); void savePolicy(); }}><label>新资料保留天数<input type="number" min={1} max={90} step={1} required value={days} onChange={(event) => setDays(Number(event.target.value))} /></label><label>策略修改理由<textarea minLength={4} maxLength={300} rows={2} required value={policyReason} onChange={(event) => setPolicyReason(event.target.value)} /></label><button className="button primary" disabled={busy}>保存保留期策略</button></form></section>
       <section className="panel form-panel"><div className="section-heading"><div><h2>到期清理预览</h2><p>本次截止：{new Date(workspace.preview.cutoffAt).toLocaleString("zh-CN")}。每批最多25名候选人、25场独立到期面试、200个缓存及100条审计上下文。</p></div><button className="button secondary" disabled={busy} onClick={() => void work(load)}>重新预览</button></div>

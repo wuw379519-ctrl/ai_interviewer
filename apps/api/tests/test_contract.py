@@ -10,19 +10,28 @@ def test_production_https_login_is_separate_and_rejects_cross_origin() -> None:
     settings = Settings(sqlite_path=":memory:", environment="production", demo=False, app_base_url=origin,
                         secret="fixture-" * 8, recruiter_password="recruiter-fixture", admin_password="admin-only-fixture")
     with TestClient(create_app(settings), base_url=origin) as client:
-        for invalid in ["", "错误访问码", settings.admin_password]:
-            assert client.post("/api/auth/login", json={"accessCode": invalid}, headers={"Origin": origin}).status_code == 401
-        assert client.post("/api/auth/login", json={"accessCode": settings.recruiter_password},
+        for invalid in ["", "错误密码", settings.admin_password]:
+            assert client.post("/api/auth/login", json={"username": settings.recruiter_username, "password": invalid},
+                               headers={"Origin": origin}).status_code == 401
+        recruiter_account = {"username": settings.recruiter_username, "password": settings.recruiter_password}
+        admin_account = {"username": settings.admin_username, "password": settings.admin_password}
+        assert client.post("/api/auth/login", json={"accessCode": settings.admin_password}).status_code == 400
+        assert client.post("/api/auth/login", json=recruiter_account,
                            headers={"Origin": "https://other.example.test"}).status_code == 401
-        recruiter = client.post("/api/auth/login", json={"accessCode": settings.recruiter_password}, headers={"Origin": origin})
+        recruiter = client.post("/api/auth/login", json=recruiter_account, headers={"Origin": origin})
         assert recruiter.status_code == 200
         assert all(flag in recruiter.headers["set-cookie"] for flag in ["HttpOnly", "Secure", "SameSite=strict"])
         assert client.get("/api/jobs").status_code == 200
         assert client.get("/api/admin/interviews").status_code == 403
-        assert client.post("/api/admin/login", json={"accessCode": settings.recruiter_password},
+        assert client.post("/api/admin/login", json=recruiter_account,
                            headers={"Origin": origin}).status_code == 401
-        assert client.post("/api/admin/login", json={"accessCode": settings.admin_password},
-                           headers={"Origin": origin}).status_code == 200
+        admin = client.post("/api/auth/login", json=admin_account, headers={"Origin": origin})
+        assert admin.status_code == 200 and admin.json()["role"] == "admin"
+        assert client.get("/api/admin/interviews").status_code == 200
+        assert client.get("/api/jobs").status_code == 200
+        assert client.post("/api/auth/login", json=recruiter_account, headers={"Origin": origin}).status_code == 200
+        assert client.get("/api/admin/interviews").status_code == 403
+        assert client.post("/api/admin/login", json=admin_account, headers={"Origin": origin}).status_code == 200
         assert client.get("/api/admin/interviews").status_code == 200
 
 

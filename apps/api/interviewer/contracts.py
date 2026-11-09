@@ -160,7 +160,8 @@ class PauseInput(Contract):
 
 
 class LoginInput(Contract):
-    access_code: str = Field(default="", max_length=200)
+    username: str = Field(default="", max_length=64)
+    password: str = Field(default="", max_length=200)
 
 
 class EmptyInput(Contract):

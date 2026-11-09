@@ -194,11 +194,22 @@ def create_app(configuration: Settings | None = None) -> FastAPI:
         return send(Result({"ok": True, "database": "ready", "mode": settings.environment,
                             "speech": "server_configured" if settings.stt_provider == "whisper" or settings.stt_base_url and settings.stt_model else "device_local"}))
 
-    def login(request: Request, body: LoginInput, role: str) -> Response:
-        configured = settings.admin_password if role == "admin" else settings.recruiter_password
-        if not settings.demo and (not configured or not hmac.compare_digest(body.access_code.encode(), configured.encode())):
-            raise DomainError("UNAUTHORIZED", "访问码不正确")
-        response = send(Result({"ok": True, "demo": settings.demo}))
+    def login(body: LoginInput, admin_only: bool = False) -> Response:
+        demo_login = settings.demo and not body.username and not body.password
+        username = body.username.strip()
+        if demo_login:
+            role = "admin" if admin_only else "recruiter"
+        else:
+            role = "admin" if username == settings.admin_username else "recruiter"
+            expected_name = settings.admin_username if role == "admin" else settings.recruiter_username
+            expected_password = settings.admin_password if role == "admin" else settings.recruiter_password
+            if (not username or username != expected_name or not expected_password or
+                    not hmac.compare_digest(body.password.encode(), expected_password.encode()) or (admin_only and role != "admin")):
+                raise DomainError("UNAUTHORIZED", "账号或密码不正确")
+        response = send(Result({"ok": True, "demo": demo_login, "role": role}))
+        if not demo_login:
+            other = "recruiter" if role == "admin" else "admin"
+            response.delete_cookie(f"aii_{other}", path="/", secure=settings.environment == "production", httponly=True, samesite="strict")
         response.set_cookie(f"aii_{role}", service.auth.session(int(time.time() * 1000) + 8 * 3600000, role),
                             max_age=8 * 3600, httponly=True, secure=settings.environment == "production", samesite="strict", path="/")
         with database.unit_of_work() as connection:
@@ -206,12 +217,12 @@ def create_app(configuration: Settings | None = None) -> FastAPI:
         return response
 
     @app.post("/api/auth/login", tags=["identity"])
-    def recruiter_login(request: Request, body: LoginInput) -> Response:
-        return login(request, body, "recruiter")
+    def recruiter_login(body: LoginInput) -> Response:
+        return login(body)
 
     @app.post("/api/admin/login", tags=["identity"])
-    def admin_login(request: Request, body: LoginInput) -> Response:
-        return login(request, body, "admin")
+    def admin_login(body: LoginInput) -> Response:
+        return login(body, admin_only=True)
 
     @app.post("/api/admin/logout", tags=["identity"])
     def admin_logout(request: Request, _body: EmptyInput) -> Response:

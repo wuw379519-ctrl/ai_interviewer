@@ -7,15 +7,18 @@ import { spawn, spawnSync } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { createServer } from "node:net";
 import { root, spawnPython } from "./python.mjs";
-import { httpsOrigin, publicAccess } from "./public-access.mjs";
+import { httpsOrigin, workspaceAccounts } from "./workspace-accounts.mjs";
 
 const args = process.argv.slice(2);
 const argument = (name, fallback) => { const index = args.indexOf(name); return index < 0 ? fallback : args[index + 1]; };
-const accessFile = path.join(root, ".data", "public-access.json");
-if (args.includes("--public-access")) {
-  if (args.length !== 1) throw Error("--public-access 单独运行，仅显示两种网页访问码。");
-  const access = publicAccess(accessFile, process.env);
-  console.log(`招聘者访问码：${access.RECRUITER_PASSWORD}\n管理员访问码：${access.ADMIN_PASSWORD}`);
+const accounts = () => workspaceAccounts(path.join(root, ".data", "workspace-accounts.json"),
+  path.join(root, ".data", "public-access.json"), process.env);
+if (args.includes("--public-access")) throw Error("请改用 --show-admin 查看管理员账号和密码。");
+if (args.includes("--show-admin") || args.includes("--show-recruiter")) {
+  if (args.length !== 1) throw Error("请单独运行 --show-admin 或 --show-recruiter。");
+  const account = accounts();
+  const admin = args[0] === "--show-admin";
+  console.log(`账号：${admin ? account.ADMIN_USERNAME : account.RECRUITER_USERNAME}\n密码：${admin ? account.ADMIN_PASSWORD : account.RECRUITER_PASSWORD}`);
   process.exit(0);
 }
 const publicOrigin = args.includes("--public-url") ? httpsOrigin(argument("--public-url")) : undefined;
@@ -29,9 +32,10 @@ if (publicOrigin && !existsSync(path.join(webDir, process.env.NEXT_DIST_DIR ?? "
   throw Error("公网模式需要生产构建，请先运行 pnpm build。");
 }
 const apiEnv = publicOrigin
-  ? { ...publicAccess(accessFile, process.env), APP_ENV: "production", DEMO_MODE: "false", APP_BASE_URL: publicOrigin,
+  ? { ...accounts(), APP_ENV: "production", DEMO_MODE: "false", APP_BASE_URL: publicOrigin,
     STT_PROVIDER: "auto", STT_BASE_URL: "", STT_MODEL: "", TTS_PROVIDER: "local" }
-  : { APP_ENV: "development", APP_BASE_URL: process.env.APP_BASE_URL ?? webURL };
+  : { ...accounts(), APP_ENV: "development", DEMO_MODE: process.env.DEMO_MODE === "true" ? "true" : "false",
+    APP_BASE_URL: process.env.APP_BASE_URL ?? webURL };
 for (const port of [webPort, apiPort]) {
   await new Promise((resolve, reject) => {
     const probe = createServer();
