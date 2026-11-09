@@ -57,6 +57,14 @@ class Settings(BaseModel):
     tts_connect_timeout: int = Field(default=10, ge=1, le=60)
     tts_max_concurrency: int = Field(default=2, ge=1, le=8)
     operation_logs: bool = False
+    feishu_app_id: str = ""
+    feishu_app_secret: str = ""
+    feishu_verification_token: str = ""
+    feishu_encrypt_key: str = ""
+    feishu_api_base_url: str = "https://open.feishu.cn"
+    feishu_oauth_redirect_uri: str = ""
+    feishu_recruiter_open_ids: str = ""
+    feishu_admin_open_ids: str = ""
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -95,7 +103,15 @@ class Settings(BaseModel):
                    tts_rate=env.get("TTS_RATE", "-5%"), tts_timeout=int(env.get("TTS_TIMEOUT", "30")),
                    tts_connect_timeout=int(env.get("TTS_CONNECT_TIMEOUT", "10")),
                    tts_max_concurrency=int(env.get("TTS_MAX_CONCURRENCY", "2")),
-                   operation_logs=env.get("OBSERVABILITY_LOGS") == "true")
+                   operation_logs=env.get("OBSERVABILITY_LOGS") == "true",
+                   feishu_app_id=env.get("FEISHU_APP_ID", ""),
+                   feishu_app_secret=env.get("FEISHU_APP_SECRET", ""),
+                   feishu_verification_token=env.get("FEISHU_VERIFICATION_TOKEN", ""),
+                   feishu_encrypt_key=env.get("FEISHU_ENCRYPT_KEY", ""),
+                   feishu_api_base_url=env.get("FEISHU_API_BASE_URL", "https://open.feishu.cn"),
+                   feishu_oauth_redirect_uri=env.get("FEISHU_OAUTH_REDIRECT_URI", ""),
+                   feishu_recruiter_open_ids=env.get("FEISHU_RECRUITER_OPEN_IDS", ""),
+                   feishu_admin_open_ids=env.get("FEISHU_ADMIN_OPEN_IDS", ""))
 
     def deployment_issues(self) -> list[str]:
         issues: list[str] = []

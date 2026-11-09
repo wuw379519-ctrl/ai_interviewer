@@ -98,6 +98,19 @@ FastAPI 默认使用 `127.0.0.1:8000`。端口已被占用时可运行 `node scr
 
 浏览器通过同源 `/api/*` 调用 Next，Next 通过 `PYTHON_API_URL` 转发给 FastAPI。联合启动脚本自动设置转发目标和默认 `APP_BASE_URL`。如果自行指定 `APP_BASE_URL`，请让它与浏览器实际访问的 origin 一致。
 
+### 飞书应用接入（骨架）
+
+飞书凭证只写入 Python Settings（见 `.env.example` 中 `FEISHU_*`）。前端通过同源 `/api/feishu/status` 读取公开状态，**不在构建期读环境变量**，也不直连 `open.feishu.cn`。
+
+| 路径 | 说明 |
+| --- | --- |
+| `apps/api/interviewer/feishu.py` | 飞书出网端口（Live/Fake）与 OAuth state / 事件解密 |
+| `apps/web/integrations/feishu/` | 前端 JSAPI / 免登 / 后端桥接占位，可从 `@/integrations/feishu` 引用 |
+
+### 飞书免登（后端骨架）
+
+未配置时相关接口返回 `FEISHU_NOT_CONFIGURED`。`GET /api/feishu/status` 只返回公开字段；`POST /api/feishu/oauth/callback` 校验一次性 state 后按 open_id 白名单签发 `aii_recruiter` / `aii_admin` cookie。`POST /api/feishu/events` 支持 url_verification 与可选 Encrypt Key 解密。登录页本轮未接线，账号密码登录不变。
+
 Python 解释器按 `.venv`、`.venv-clean`、`.venv311`、PATH 的顺序查找。可在终端设置 `$env:PYTHON_EXECUTABLE = (Resolve-Path '.\.venv-clean\Scripts\python.exe').Path` 显式使用隔离环境。`pnpm verify` 一次运行 TS 和 Python 门禁。Playwright 浏览器就绪后可用 `pnpm test:e2e` 单独运行浏览器套件。
 
 ### 正式文字面试

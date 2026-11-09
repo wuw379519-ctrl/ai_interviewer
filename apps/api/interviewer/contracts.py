@@ -163,6 +163,11 @@ class LoginInput(Contract):
     password: str = Field(default="", max_length=200)
 
 
+class FeishuOAuthInput(Contract):
+    code: str = Field(min_length=1, max_length=512)
+    state: str = Field(min_length=1, max_length=512)
+
+
 class EmptyInput(Contract):
     pass
 

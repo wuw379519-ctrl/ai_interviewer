@@ -19,15 +19,16 @@ from pydantic import ValidationError
 from .repository import StorageSession
 from starlette.exceptions import HTTPException
 
-from . import assessment, database as db, formal, governance, records, speech, tts
+from . import assessment, database as db, feishu, formal, governance, records, speech, tts
 from .auth import Actor
 from .chat_api import CHAT_PATH, SESSION_PATH, WEB_ORIGIN, PracticeChat
 from .contracts import (CandidateCreate, CleanupInput, CompetencySet, ConsentInput, Contract,
-                        DeleteInput, EmptyInput, ErrorEnvelope, FormalInterviewCreate, GraduateInput, InterviewCreate, JobCreate,
+                        DeleteInput, EmptyInput, ErrorEnvelope, FeishuOAuthInput, FormalInterviewCreate, GraduateInput, InterviewCreate, JobCreate,
                         LoginInput, MediaInput, Object, PauseInput, PrintInput, ReportDocument,
                         ResumeText, RetentionInput, ReviewInput, RevisionInput, ScoreInput,
                         TurnInput, json_object)
 from .errors import DomainError
+from .feishu import FakeFeishu, FeishuPort, LiveFeishu, STATE_STORE, open_id_fingerprint, public_status, role_for_open_id
 from .operations import Operations
 from .service import Result, Service
 from .settings import Settings
@@ -106,6 +107,7 @@ def create_app(configuration: Settings | None = None) -> FastAPI:
                   openapi_url="/api/openapi.json", docs_url=None, redoc_url=None,
                   responses={code: {"model": ErrorEnvelope} for code in [400, 401, 403, 404, 409, 410, 429, 500, 502, 503]})
     app.state.service = service
+    app.state.feishu = LiveFeishu(settings) if feishu.feishu_configured(settings) else FakeFeishu()
     practice.mount(app)
 
     def admit(request: Request) -> None:
@@ -113,9 +115,9 @@ def create_app(configuration: Settings | None = None) -> FastAPI:
         if path in {CHAT_PATH, SESSION_PATH}:
             practice.admit(request)
             return
-        if path in {"/api/health", "/api/ready", "/api/openapi.json"}:
+        if path in {"/api/health", "/api/ready", "/api/openapi.json", "/api/feishu/status", "/api/feishu/events"}:
             return
-        if path in {"/api/auth/login", "/api/admin/login"}:
+        if path in {"/api/auth/login", "/api/admin/login", "/api/feishu/oauth/callback"}:
             service.auth.origin(request)
             service.auth.limit("login:" + (request.client.host if request.client else "local"), 100 if settings.demo else 10)
             return
@@ -223,6 +225,48 @@ def create_app(configuration: Settings | None = None) -> FastAPI:
     @app.post("/api/admin/login", tags=["identity"])
     def admin_login(body: LoginInput) -> Response:
         return login(body, admin_only=True)
+
+    @app.get("/api/feishu/status", tags=["identity"])
+    def feishu_status() -> Response:
+        return send(Result(public_status(settings)))
+
+    @app.post("/api/feishu/oauth/callback", tags=["identity"])
+    def feishu_oauth_callback(request: Request, body: FeishuOAuthInput) -> Response:
+        feishu.require_feishu_configured(settings)
+        STATE_STORE.consume(service.auth, body.state)
+        port = cast(FeishuPort, request.app.state.feishu)
+        open_id = port.exchange_code(body.code)
+        role = role_for_open_id(settings, open_id)
+        if role is None:
+            raise DomainError("FEISHU_ROLE_NOT_ALLOWED", "飞书账号不在工作台白名单")
+        response = send(Result({"ok": True, "role": role}))
+        other = "recruiter" if role == "admin" else "admin"
+        response.delete_cookie(f"aii_{other}", path="/", secure=settings.environment == "production", httponly=True, samesite="strict")
+        response.set_cookie(f"aii_{role}", service.auth.session(int(time.time() * 1000) + 8 * 3600000, role),
+                            max_age=8 * 3600, httponly=True, secure=settings.environment == "production", samesite="strict", path="/")
+        with database.unit_of_work() as connection:
+            service.audit(connection, "feishu.login", "workspace",
+                          {"role": role, "openIdHash": open_id_fingerprint(open_id)},
+                          actor=Actor(role, role, "飞书工作空间身份"))
+        return response
+
+    @app.post("/api/feishu/events", tags=["identity"])
+    async def feishu_events(request: Request) -> Response:
+        raw: object = await request.json()
+        body = json_object(raw if isinstance(raw, dict) else {})
+        payload = feishu.parse_event_body(settings, body)
+        if str(payload.get("type") or "") == "url_verification" or "challenge" in payload:
+            challenge = payload.get("challenge")
+            if challenge is None:
+                raise DomainError("VALIDATION_FAILED", "缺少 challenge")
+            return JSONResponse({"challenge": challenge}, headers={"Cache-Control": "no-store"})
+        header = payload.get("header")
+        event_type = str(payload.get("type") or "unknown")
+        if isinstance(header, dict) and header.get("event_type"):
+            event_type = str(header["event_type"])
+        with database.unit_of_work() as connection:
+            service.audit(connection, "feishu.event_ignored", "workspace", {"eventType": event_type[:80]})
+        return send(Result({"ok": True}))
 
     @app.post("/api/admin/logout", tags=["identity"])
     def admin_logout(request: Request, _body: EmptyInput) -> Response:
@@ -457,7 +501,8 @@ def create_app(configuration: Settings | None = None) -> FastAPI:
                 continue
             operation["responses"].pop("422", None)
             suffix = path.rsplit("/", 1)[-1]
-            public = path in {"/api/health", "/api/ready", "/api/auth/login", "/api/admin/login"}
+            public = path in {"/api/health", "/api/ready", "/api/auth/login", "/api/admin/login",
+                              "/api/feishu/status", "/api/feishu/oauth/callback", "/api/feishu/events"}
             admin = path.startswith("/api/admin/") or path == "/api/candidates/{candidate_id}" and method in {"get", "delete"}
             candidate = path.startswith("/api/interviews/") and suffix in CANDIDATE_ACTIONS
             operation["security"] = [] if public else [{"CandidateBearer": []}] if candidate else [{"AdminSession": []}, {"AdminApiKey": []}] if admin else [{"RecruiterSession": []}, {"RecruiterApiKey": []}]

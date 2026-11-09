@@ -633,3 +633,11 @@ Python 3.11.9 的 `pnpm verify` 通过，Vitest 160 项通过，pytest 197 项�
 新建正式面试使用独立版本的研究生校招题单。复用已有题面与资格核验规则，按原表题号安排，第 2 题核验英语四级，第 4 题核验研究生课程。岗位工作安排沿用对原表家庭情况的替换，可自愿回答。九道固定题之后保留三道岗位与简历定制题。发起表单及 API 移除手动固定题输入。已保存的面试继续使用原版本。
 
 两项资格题不可直接跳过，暂不确定可填写待核验。计时结束仍会补问剩余资格题。候选人可以提前结束或撤回，未覆盖的题目留在记录里。新版场次使用单独的知情说明版本。管理员可在记录详情填写人工核验，四级低于 425 分或研究生期间曾挂科时报告明确标为资格不满足。资格与能力分分列，保留人工复核流程。无需数据库迁移。
+
+## D66 飞书应用接入骨架与后端端口
+
+**状态**：本轮实施（离线可验，不接真实飞书）
+
+删除根目录 Node `integrations/feishu/`；配置唯一来源为 Python `Settings` 与 `/api/feishu/*`。前端 `getFeishuStatus()` 同源拉取公开状态，不再构建期读 env，不暴露 `NEXT_PUBLIC_FEISHU_*`。密钥仅留在 `apps/web/integrations/feishu/server.ts`（`import "server-only"` 本地 shim，因禁止新增 npm 依赖）与 Python 进程。出网调用只在 Python：`FeishuPort` / `LiveFeishu` / `FakeFeishu`；OAuth state 为 8 分钟一次性 HMAC；事件支持 url_verification 与 AES-CBC 解密。未配置返回 `FEISHU_NOT_CONFIGURED`。登录页未接线，`/api/auth/login` 与 `/api/admin/login` 行为不变。无新表、无新依赖。
+
+**回退**：移除 `apps/api/interviewer/feishu.py`、相关路由与 `apps/web/integrations/feishu/`，并还原 Settings / `.env.example` / README 飞书段落。

@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
@@ -10,6 +11,14 @@ const nextConfig: NextConfig = {
   eslint: {
     // lint 由根目录统一执行（pnpm lint），避免 next build 期间重复且规则不一致
     ignoreDuringBuilds: true,
+  },
+  webpack(config) {
+    // Local shim: ticket forbids adding the npm `server-only` package to the lockfile.
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      "server-only": path.join(__dirname, "shims/server-only.ts"),
+    };
+    return config;
   },
 };
 
