@@ -26,6 +26,7 @@ export function GraduateReviewPanel({ report, onUpdated }: { report: ReportDocum
   }
   return <section className="panel report-editor no-print" aria-labelledby="graduate-review-title"><h2 id="graduate-review-title">研究生校招 · 岗位硬指标核验</h2>
     <p data-testid="qualification-status"><strong>{qualificationLabels[campus.status]}</strong> · CET-4 ≥425分；研究生期间无曾经不及格记录，补考或重修后通过仍计入。</p>
+    <p className="small muted">英语四级 · {qualificationLabels[campus.cet4Status]} | 研究生课程 · {qualificationLabels[campus.graduateCoursesStatus]}</p>
     <p>面试中的自述不视为核验完成。请由招聘者查看成绩报告与完整研究生成绩单后录入；无证明时保留空白，不能把“未知”填成0。不要求证件号、考试账号或密码。</p>
     <details><summary>固定必问触达 {campus.mandatoryAsked}/{campus.mandatoryTotal} · 已回答 {campus.mandatoryAnswered}</summary><ol>{campus.topics.map((topic) => <li key={topic.key}>{topic.label} · {topic.skipped ? "候选人跳过" : topic.answered ? "已回答" : topic.asked ? "已提问，未回答" : "未触达"}{topic.responses.map((response) => <blockquote key={response.turnId}><p>{response.quote}</p><span className="small muted">turn_id: {response.turnId} · 候选人原话（脱敏）</span></blockquote>)}</li>)}</ol></details>
     {saved && <p className="small muted">最近核验：{saved.reviewerName} · {new Date(saved.reviewedAt).toLocaleString("zh-CN")} · {saved.note}</p>}

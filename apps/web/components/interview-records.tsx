@@ -5,6 +5,7 @@ import Link from "next/link";
 import { z } from "zod";
 import { interviewStatusSchema, reportDocumentSchema, type ReportDocument } from "@aii/core";
 import { api, ClientApiError } from "@/lib/client-api";
+import { GraduateReviewPanel } from "./graduate-review-panel";
 import { Shell } from "./shell";
 import { needsLogin, WorkspaceLogin } from "./workspace-login";
 
@@ -159,7 +160,13 @@ export function InterviewRecords({ demo, id }: { demo: boolean; id?: string }) {
             <div><dt>保留至</dt><dd>{formatDate(detail.interview.retainedUntil)}</dd></div>
           </dl>
         </section>
-        {detail.report ? <Evaluation report={detail.report} /> : <section className="panel record-section">
+        {detail.report ? <>
+          {detail.report.campus && <GraduateReviewPanel report={detail.report} onUpdated={(report) => setDetail((current) =>
+            current?.interview.id === report.interviewId
+              ? { ...current, report, interview: { ...current.interview, status: report.status } }
+              : current)} />}
+          <Evaluation report={detail.report} />
+        </> : <section className="panel record-section">
           <h2>面试评价</h2>
           {detail.interview.status === "scoring" ? <>
             <p className="muted">面试已结束。生成评价后可核对各维度得分和对应原话。</p>

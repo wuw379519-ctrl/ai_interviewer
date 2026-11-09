@@ -18,7 +18,7 @@ from . import database as db
 from .auth import Actor, Auth
 from .contracts import (CandidateCreate, CompetencySet, Contract, InterviewCreate, JobCreate,
                         MediaInput, Object, PlanDraft, ResumeExtraction, TurnInput, json_object)
-from .domain import (FOLLOWUP_TEXT, FORMAL_TEXT_PLAN, INJECTION, build_plan, fixture_competencies,
+from .domain import (FOLLOWUP_TEXT, FORMAL_CAMPUS_PLAN, FORMAL_TEXT_PLANS, INJECTION, build_plan, fixture_competencies,
                      fixture_resume, followup_missing, question_prompt, transition, validate_competencies)
 from .errors import DomainError
 from .provider import Provider
@@ -88,6 +88,9 @@ class Service:
 
     def consent_text(self, row: db.Row) -> tuple[str, str]:
         version, text = consent(str(row["mode"]), bool(row["camera_required"]), str(row["recruitment_track"]), as_int(row, "retention_days"))
+        if row["plan_version"] == FORMAL_CAMPUS_PLAN:
+            version += "-formal-v2"
+            text += " 四级与研究生课程为必问题。暂不确定时可填写待核验。计时结束后，系统会先补问尚未完成的资格题。"
         if row["mode"] == "voice" and self.settings.tts_provider == "edge":
             version += "-edge-question-v1"
             text += " 题目播报使用微软Edge在线语音服务，仅发送面试官固定题目，不发送你的回答或简历；播报失败可阅读文字题目。"
@@ -109,7 +112,7 @@ class Service:
             raise DomainError("UNAUTHORIZED", "邀请已撤回、删除或到期") from error
         if count_limit:
             self.auth.limit(f"candidate:{identity}")
-        formal_replay = (row["plan_version"] == FORMAL_TEXT_PLAN
+        formal_replay = (row["plan_version"] in FORMAL_TEXT_PLANS
                          and request.url.path.endswith("/turns") and bool(request.headers.get("idempotency-key"))
                          and row["status"] in {"scoring", "report_ready", "reviewed"})
         if answering and not formal_replay and row["status"] not in {"interviewing", "wrapping_up"}:
@@ -252,7 +255,7 @@ class Service:
         reusable = db.rows(connection, select(db.interviews).where(and_(db.interviews.c.job_id == body.job_id,
                            db.interviews.c.duration_minutes == body.duration_minutes,
                            db.interviews.c.recruitment_track == job["recruitment_track"],
-                           db.interviews.c.plan_version != FORMAL_TEXT_PLAN))
+                           db.interviews.c.plan_version.not_in(FORMAL_TEXT_PLANS)))
                            .order_by(db.interviews.c.created_at).limit(1))
         if reusable:
             original = db.rows(connection, select(db.questions).where(db.questions.c.interview_id == reusable[0]["id"]).order_by(db.questions.c.seq))
@@ -338,7 +341,7 @@ class Service:
         mandatory = [question for question in questions if question["mandatory"]]
         return {"interviewId": interview_id, "status": str(row["status"]), "durationMinutes": as_int(row, "duration_minutes"),
                 "retentionDays": as_int(row, "retention_days"), "retainedUntil": db.iso(row["retained_until"]), "recruitmentTrack": str(row["recruitment_track"]),
-                "formalText": row["plan_version"] == FORMAL_TEXT_PLAN,
+                "formalText": row["plan_version"] in FORMAL_TEXT_PLANS,
                 "startedAt": db.iso(row["started_at"]) if row.get("started_at") else None, "remainingSec": self.remaining(row), "questionSeq": seq,
                 "followupsAsked": depth, "totalQuestions": len(questions), "answeredQuestions": sum(question["status"] in {"answered", "skipped"} for question in questions),
                 "pausedAt": db.iso(row["paused_at"]) if row.get("paused_at") else None, "jobTitle": str(self.required(connection, db.jobs, str(row["job_id"]), "JOB_NOT_FOUND")["title"]),
@@ -417,11 +420,15 @@ class Service:
         if row.get("paused_at"):
             raise DomainError("RESOURCE_CONFLICT", "面试已暂停，请先恢复")
         self.media_ready(row)
-        formal_text = row["plan_version"] == FORMAL_TEXT_PLAN
+        formal_text = row["plan_version"] in FORMAL_TEXT_PLANS
+        formal_campus = row["plan_version"] == FORMAL_CAMPUS_PLAN
         question_rows, turns = self.question_rows(connection, identity), self.turn_rows(connection, identity)
         current = next((question for question in question_rows if question["seq"] == row["current_question_seq"]), question_rows[0])
         if body.expected_question_seq is not None and body.expected_question_seq != current["seq"]:
             raise DomainError("RESOURCE_CONFLICT", "当前题目已更新，请核对后再提交")
+        required_qualification = formal_campus and current["assessment_mode"] == "eligibility"
+        if required_qualification and body.action == "skip":
+            raise DomainError("VALIDATION_FAILED", "资格必问题须先回答，暂不确定时可以说明待核验")
         depth = sum(turn["role"] == "interviewer" and turn["question_id"] == current["id"] and bool(turn["is_followup"]) for turn in turns)
         remaining = self.remaining(row)
         result: Object = {"interviewId": identity, "kind": "ask_question", "text": "", "questionSeq": as_int(current, "seq"),
@@ -430,7 +437,7 @@ class Service:
         if body.action == "repeat":
             result.update(kind="ask_followup" if depth else "ask_question", text=str(next((turn["content"] for turn in reversed(turns) if turn["role"] == "interviewer"), current["prompt"])))
             return Result(result)
-        if body.action == "answer" and remaining > 0:
+        if body.action == "answer" and (remaining > 0 or required_qualification):
             content = (body.content or "").strip()
             if not content:
                 raise DomainError("VALIDATION_FAILED", "回答不能为空")
@@ -445,12 +452,14 @@ class Service:
             self.append(connection, identity, str(current["id"]), "interviewer", question, True)
             result.update(kind="ask_followup", text=question, followupDepth=depth + 1)
         else:
-            skipped = body.action == "skip" or (formal_text and remaining <= 0)
+            skipped = body.action == "skip" or (formal_text and remaining <= 0 and not required_qualification)
             db.update(connection, db.questions, str(current["id"]), status="skipped" if skipped else "answered")
             upcoming = [question for question in question_rows if as_int(question, "seq") > as_int(current, "seq") and question["status"] == "pending"]
             if low_time and not formal_text:
                 upcoming = [question for question in upcoming if question["mandatory"]] if row["recruitment_track"] == "graduate_campus" else []
-            if upcoming and remaining > 0 and row["status"] == "interviewing":
+            if formal_campus and remaining <= 0:
+                upcoming = [question for question in upcoming if question["assessment_mode"] == "eligibility"]
+            if upcoming and (remaining > 0 or formal_campus) and row["status"] == "interviewing":
                 next_question = upcoming[0]
                 self.append(connection, identity, str(next_question["id"]), "interviewer", guard_output(str(next_question["prompt"])))
                 db.update(connection, db.questions, str(next_question["id"]), status="asked")

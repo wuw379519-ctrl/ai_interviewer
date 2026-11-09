@@ -10,7 +10,7 @@ from .repository import StorageSession
 from . import database as db
 from .auth import Actor
 from .contracts import AssessmentSample, GraduateInput, Object, RevisionInput, ReviewInput, ScoreValue
-from .domain import GRADUATE_POLICY, TOPICS, eligibility, fixture_assessment, scoring_prompt
+from .domain import FORMAL_CAMPUS_PLAN, FORMAL_CAMPUS_TOPICS, GRADUATE_POLICY, TOPICS, eligibility, fixture_assessment, scoring_prompt
 from .errors import DomainError
 from .safety import INJECTION, assessment_text, guard_output, json_hash, redact
 from .service import Result, as_int, object_value, objects
@@ -26,7 +26,7 @@ def campus_summary(service: Service, connection: StorageSession, interview: db.R
     turns = service.turn_rows(connection, str(interview["id"]))
     person = service.candidate(connection, str(interview["candidate_id"]))
     topics: list[Object] = []
-    for topic in TOPICS:
+    for topic in FORMAL_CAMPUS_TOPICS if interview["plan_version"] == FORMAL_CAMPUS_PLAN else TOPICS:
         question = next((row for row in questions if row["topic_key"] == topic["key"]), None)
         matching = [row for row in turns if question and row["question_id"] == question["id"]]
         topics.append({"key": topic["key"], "label": topic["label"], "sourceNumber": topic["sourceNumber"],
@@ -69,7 +69,10 @@ def report_document(service: Service, connection: StorageSession, interview_id: 
     recommendation = "mixed" if overall is None else "strong_yes" if overall >= 4.25 else "yes" if overall >= 3.5 else "mixed" if overall >= 2.5 else "no"
     reason = "按已确认岗位权重与原文行为聚合，仅供人类复核，不自动决定录用或淘汰。"
     campus = campus_summary(service, connection, interview)
-    if campus and (campus["status"] != "met" or campus["mandatoryAsked"] != campus["mandatoryTotal"]):
+    if campus and campus["status"] == "not_met" and interview["plan_version"] == FORMAL_CAMPUS_PLAN:
+        recommendation = "no"
+        reason = "人工核验确认未满足岗位硬性资格。能力评分单独保留，由招聘者决定后续处理。"
+    elif campus and (campus["status"] != "met" or campus["mandatoryAsked"] != campus["mandatoryTotal"]):
         recommendation = "mixed"
         reason = "岗位硬指标尚待核验、不满足，或固定必问尚未全部触达；能力分不能抵消硬指标，请招聘者人工处理。"
     revisions = db.rows(connection, select(db.score_revisions).where(db.score_revisions.c.score_id.in_([str(row["id"]) for row in score_rows])).order_by(db.score_revisions.c.created_at))

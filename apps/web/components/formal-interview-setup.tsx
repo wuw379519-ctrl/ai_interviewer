@@ -34,14 +34,9 @@ export function FormalInterviewSetup({ demo }: { demo: boolean }) {
     setError("");
     const data = new FormData(form);
     const value = (field: string) => String(data.get(field) ?? "").trim();
-    const fixedQuestions = value("fixedQuestions").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-    if (fixedQuestions.length < 1 || fixedQuestions.length > 8 || fixedQuestions.some((line) => line.length < 2 || line.length > 400)) {
-      setError("请填写 1 至 8 道固定题，每行一题，每题 2 至 400 字。");
-      return;
-    }
     const body = {
       title: value("title"), candidateName: value("candidateName"), jdText: value("jdText"),
-      resumeText: value("resumeText"), fixedQuestions, durationMinutes: Number(value("durationMinutes")),
+      resumeText: value("resumeText"), durationMinutes: Number(value("durationMinutes")),
     };
     const fingerprint = JSON.stringify(body);
     if (retry.current?.fingerprint !== fingerprint) retry.current = { fingerprint, key: crypto.randomUUID() };
@@ -76,7 +71,7 @@ export function FormalInterviewSetup({ demo }: { demo: boolean }) {
       <header className="formal-hero">
         <p className="eyebrow">INTERVIEW STUDIO</p>
         <h1>创建正式面试</h1>
-        <p>保留你想问的每一道题，再把候选人的经历放回岗位场景里聊。</p>
+        <p>使用统一的研究生校招题单，再结合岗位要求和候选人的经历提问。</p>
         <div className="formal-tags"><span>文字问答</span><span>专属邀请</span><span>证据评价</span></div>
       </header>
       {error && <p role="alert" className="error-banner">{error}</p>}
@@ -107,16 +102,13 @@ export function FormalInterviewSetup({ demo }: { demo: boolean }) {
             <label>岗位 JD<textarea name="jdText" rows={4} minLength={30} maxLength={20000} placeholder="粘贴岗位职责、任职要求和关键交付内容（至少 30 字）" required /></label>
             <label>候选人简历<textarea name="resumeText" rows={4} minLength={20} maxLength={30000} placeholder="粘贴相关项目、技能和个人经历（至少 20 字）" required /></label>
           </fieldset>
-          <fieldset disabled={busy}>
-            <legend><span className="formal-index">03</span> 固定问题</legend>
-            <label>固定题（每行一题）<textarea name="fixedQuestions" rows={5} maxLength={3207} placeholder={"请介绍一次你主导交付的经历？\n你是如何处理项目里的分歧的？"} required /></label>
-          </fieldset>
           <div className="formal-form-actions"><button className="button primary" disabled={busy}>{busy ? "正在创建…" : "生成候选人邀请 →"}</button></div>
         </form>
         <aside className="panel formal-guide">
           <p className="eyebrow">面试流程</p>
           <ol>
-            <li><strong>固定题先问</strong><p>填写 1–8 题，候选人会按你输入的顺序看到它们。</p></li>
+            <li><strong>系统使用固定题单</strong><p>包含自我介绍、项目经验、求职动机、期望收入、职业规划、自我评价和岗位工作安排。</p></li>
+            <li><strong>核验两项硬性资格</strong><p>英语四级达到 425 分，研究生期间曾挂科门数为 0。这两题须作答，资格以人工核验为准。</p></li>
             <li><strong>结合岗位和经历</strong><p>随后补充岗位理解、简历实践和经验迁移三题。</p></li>
             <li><strong>查看评价</strong><p>候选人提交后，可在管理员记录里生成评价并核对原文证据。</p></li>
           </ol>

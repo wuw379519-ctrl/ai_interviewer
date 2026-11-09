@@ -7282,17 +7282,6 @@
             "minLength": 20,
             "title": "Resumetext"
           },
-          "fixedQuestions": {
-            "items": {
-              "type": "string",
-              "maxLength": 400,
-              "minLength": 2
-            },
-            "type": "array",
-            "maxItems": 8,
-            "minItems": 1,
-            "title": "Fixedquestions"
-          },
           "durationMinutes": {
             "type": "integer",
             "enum": [
@@ -7310,8 +7299,7 @@
           "title",
           "candidateName",
           "jdText",
-          "resumeText",
-          "fixedQuestions"
+          "resumeText"
         ],
         "title": "FormalInterviewCreate"
       }

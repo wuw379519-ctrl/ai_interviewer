@@ -57,7 +57,6 @@ class FormalInterviewCreate(Contract):
     candidate_name: str = Field(min_length=1, max_length=80)
     jd_text: str = Field(min_length=30, max_length=20000)
     resume_text: str = Field(min_length=20, max_length=30000)
-    fixed_questions: list[Annotated[str, Field(min_length=2, max_length=400)]] = Field(min_length=1, max_length=8)
     duration_minutes: Literal[15, 30, 45] = 15
 
     @field_validator("title", "candidate_name", "jd_text", "resume_text", mode="before")

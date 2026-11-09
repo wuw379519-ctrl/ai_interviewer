@@ -15,7 +15,11 @@ from .safety import INJECTION, PROTECTED, SENTINEL, json_hash, redact, safe_ques
 
 GRADUATE_POLICY = "graduate-campus-v1-cet425"
 FORMAL_TEXT_PLAN = "formal-text-v1"
+FORMAL_CAMPUS_PLAN = "formal-campus-text-v2"
+FORMAL_TEXT_PLANS = (FORMAL_TEXT_PLAN, FORMAL_CAMPUS_PLAN)
 TOPICS = TypeAdapter(list[Object]).validate_json((Path(__file__).parent / "resources/graduate-topics.json").read_text("utf-8"))
+FORMAL_CAMPUS_TOPICS = sorted(TOPICS, key=lambda topic: int(str(
+    topic["sourceNumber"] or (2 if topic["key"] == "cet4" else 4))))
 TRANSITIONS: dict[str, set[str]] = {
     "created": {"invited", "cancelled"}, "invited": {"consented", "cancelled"},
     "consented": {"warmup", "cancelled"}, "warmup": {"interviewing", "cancelled"},
