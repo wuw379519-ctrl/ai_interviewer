@@ -14,7 +14,7 @@ from sqlalchemy import Table, and_, func, select
 
 from .repository import StorageSession
 
-from . import database as db
+from . import database as db, events
 from .auth import Actor, Auth
 from .contracts import (CandidateCreate, CompetencySet, Contract, InterviewCreate, JobCreate,
                         MediaInput, Object, PlanDraft, ResumeExtraction, TurnInput, json_object)
@@ -367,6 +367,8 @@ class Service:
                       "consent_text_hash": hashlib.sha256(text.encode()).hexdigest(), "recording_allowed": row["mode"] == "voice", "consented_at": db.now()})
             transition(str(row["status"]), "consented", True)
             db.update(connection, db.interviews, identity, status="consented")
+            events.append_event(connection, identity, "consent_granted",
+                                {"from": str(row["status"]), "to": "consented", "consentVersion": version})
             self.audit(connection, "consent.recorded", identity, {"version": version}, Actor("candidate", identity, "候选人"), identity)
         return Result({"interviewId": identity, "status": "consented"})
 
@@ -383,6 +385,11 @@ class Service:
         db.update(connection, db.interviews, identity, status="interviewing", started_at=db.now(), current_question_seq=1, last_activity_at=db.now())
         self.append(connection, identity, str(first["id"]), "interviewer", guard_output(str(first["prompt"])))
         db.update(connection, db.questions, str(first["id"]), status="asked")
+        events.append_event(connection, identity, "state_changed",
+                            {"from": str(row["status"]), "to": "interviewing", "via": "start"})
+        events.append_event(connection, identity, "question_asked",
+                            {"questionId": str(first["id"]), "questionSeq": 1, "prompt": str(first["prompt"]),
+                             "isFollowup": False})
         self.audit(connection, "interview.started", identity, interview_id=identity)
         return Result({"interviewId": identity, "status": "interviewing", "questionSeq": 1, "questionText": str(first["prompt"]), "remainingSec": as_int(row, "duration_minutes") * 60})
 
@@ -393,10 +400,15 @@ class Service:
         fallback = bool(row["text_fallback"]) if body.text_fallback is None else body.text_fallback
         needed_lost = row["camera_required"] and not body.camera_active or row["mode"] == "voice" and not fallback and not body.microphone_active
         paused = row.get("paused_at")
+        auto_pause = False
         if needed_lost and not paused and row["status"] in {"interviewing", "wrapping_up"}:
             paused = db.now()
+            auto_pause = True
         db.update(connection, db.interviews, identity, camera_active=body.camera_active, microphone_active=body.microphone_active,
                   text_fallback=fallback, media_last_seen_at=db.now(), paused_at=paused)
+        if auto_pause:
+            events.append_event(connection, identity, "interrupted",
+                                {"reason": body.reason, "status": str(row["status"]), "source": "media_device_lost"})
         self.audit(connection, "media.updated", identity, body.payload(), Actor("candidate", identity, "候选人"), identity)
         return Result({"interviewId": identity, "status": str(row["status"]), "pausedAt": db.iso(paused) if paused else None})
 
@@ -406,10 +418,14 @@ class Service:
             raise DomainError("INTERVIEW_CLOSED", "当前状态不能暂停或恢复")
         if paused and not row.get("paused_at"):
             db.update(connection, db.interviews, identity, paused_at=db.now(), camera_active=False, microphone_active=False)
+            events.append_event(connection, identity, "state_changed",
+                                {"status": str(row["status"]), "paused": True, "via": "pause"})
         elif not paused and row.get("paused_at"):
             self.media_ready(row)
             total = as_int(row, "paused_total_sec") + int((db.now() - db.utc(row["paused_at"])).total_seconds())
             db.update(connection, db.interviews, identity, paused_at=None, paused_total_sec=total)
+            events.append_event(connection, identity, "state_changed",
+                                {"status": str(row["status"]), "paused": False, "via": "resume"})
         self.audit(connection, "interview.paused" if paused else "interview.resumed", identity, interview_id=identity)
         return Result({"interviewId": identity, "status": str(row["status"])})
 
@@ -443,13 +459,20 @@ class Service:
                 raise DomainError("VALIDATION_FAILED", "回答不能为空")
             injection = bool(INJECTION.search(content))
             result.update(injectionSuspected=injection, injectionSignals=["instruction_override"] if injection else [])
-            turns.append(self.append(connection, identity, str(current["id"]), "candidate", content, depth > 0))
+            answer = self.append(connection, identity, str(current["id"]), "candidate", content, depth > 0)
+            turns.append(answer)
+            events.append_event(connection, identity, "answer_received",
+                                {"questionId": str(current["id"]), "questionSeq": as_int(current, "seq"),
+                                 "turnId": str(answer["id"]), "action": "answer"})
         low_time = remaining < as_int(row, "duration_minutes") * 60 * 0.2
         answers = "\n".join(str(turn["content"]) for turn in turns if turn["role"] == "candidate" and turn["question_id"] == current["id"])
         missing = followup_missing(answers)
         if not formal_text and body.action == "answer" and not low_time and row["status"] == "interviewing" and current["assessment_mode"] == "scored" and depth < 2 and missing:
             question = FOLLOWUP_TEXT[missing[0]]
             self.append(connection, identity, str(current["id"]), "interviewer", question, True)
+            events.append_event(connection, identity, "question_asked",
+                                {"questionId": str(current["id"]), "questionSeq": as_int(current, "seq"),
+                                 "prompt": question, "isFollowup": True})
             result.update(kind="ask_followup", text=question, followupDepth=depth + 1)
         else:
             skipped = body.action == "skip" or (formal_text and remaining <= 0 and not required_qualification)
@@ -464,11 +487,16 @@ class Service:
                 self.append(connection, identity, str(next_question["id"]), "interviewer", guard_output(str(next_question["prompt"])))
                 db.update(connection, db.questions, str(next_question["id"]), status="asked")
                 db.update(connection, db.interviews, identity, current_question_seq=next_question["seq"])
+                events.append_event(connection, identity, "question_asked",
+                                    {"questionId": str(next_question["id"]), "questionSeq": as_int(next_question, "seq"),
+                                     "prompt": str(next_question["prompt"]), "isFollowup": False})
                 result.update(kind="ask_question", text=str(next_question["prompt"]), questionSeq=as_int(next_question, "seq"), followupDepth=0)
             else:
                 db.update(connection, db.interviews, identity, status="wrapping_up")
                 closing = "本次面试到此结束，谢谢你的时间。后续结果由招聘者复核。"
                 self.append(connection, identity, str(current["id"]), "interviewer", closing)
+                events.append_event(connection, identity, "state_changed",
+                                    {"from": str(row["status"]), "to": "wrapping_up", "via": "turn_complete"})
                 result.update(kind="complete", text=closing, followupDepth=0, status="wrapping_up")
                 if formal_text:
                     self.finish(connection, identity)
@@ -490,5 +518,8 @@ class Service:
                 raise DomainError("INTERVIEW_CLOSED", "面试尚未开始")
             status = "scoring"
         db.update(connection, db.interviews, identity, status=status, finished_at=db.now(), camera_active=False, microphone_active=False)
+        events.append_event(connection, identity, "state_changed",
+                            {"from": str(row["status"]), "to": status,
+                             "via": "withdraw" if withdraw else "finish"})
         self.audit(connection, "consent.withdrawn" if withdraw else "interview.finished", identity, interview_id=identity)
         return Result({"interviewId": identity, "status": status})

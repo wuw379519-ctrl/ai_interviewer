@@ -155,6 +155,21 @@ idempotency_keys = table("idempotency_keys", uid(), txt("scope", nullable=False)
 data_policies = table("data_policies", Column("id", String, primary_key=True), integer("retention_days", 90),
                       integer("revision", 1), txt("updated_by", "system", False),
                       CheckConstraint("id = 'workspace' AND retention_days BETWEEN 1 AND 90 AND revision > 0"))
+interview_events = table(
+    "interview_events",
+    uid(),
+    uid("interview_id", "interviews.id"),
+    integer("seq", 1),
+    txt("event_type", nullable=False),
+    document("payload"),
+    Column("ts", UTCDateTime(), nullable=False, default=now),
+    UniqueConstraint("interview_id", "seq", name="interview_events_interview_seq_uq"),
+    CheckConstraint("seq > 0"),
+    CheckConstraint(
+        "event_type IN ('state_changed','question_asked','answer_received','consent_granted',"
+        "'interrupted','score_computed','report_generated')"
+    ),
+)
 TABLES = {item.name: item for item in metadata.sorted_tables}
 # The legacy recruitment snapshot format has a fixed table set. Practice stays local to this database.
 practice_sessions = table("practice_sessions", uid(), txt("token_hash", nullable=False),

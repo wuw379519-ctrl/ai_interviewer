@@ -17,6 +17,7 @@ BUSINESS_TABLES: frozenset[str] = frozenset({
     "data_policies",
     "evidence",
     "idempotency_keys",
+    "interview_events",
     "interviews",
     "jobs",
     "practice_sessions",
@@ -108,6 +109,10 @@ REQUIRED_COLUMNS: Mapping[str, Mapping[str, bool]] = {
         "id": False, "token_hash": False, "consent_version": False, "turns": False,
         "retained_until": False, "created_at": False, "updated_at": False,
     },
+    "interview_events": {
+        "id": False, "interview_id": False, "seq": False, "event_type": False, "payload": False,
+        "ts": False, "created_at": False, "updated_at": False,
+    },
 }
 
 # Index names expected on both drivers after full migrate (unique table constraints may substitute).
@@ -130,6 +135,7 @@ REQUIRED_INDEXES: Mapping[str, frozenset[str]] = {
     "score_revisions": frozenset({"score_revisions_score_idx"}),
     "scores": frozenset({"scores_interview_idx", "scores_evidence_idx"}),
     "turns": frozenset({"turns_interview_idx", "turns_question_idx"}),
+    "interview_events": frozenset({"interview_events_interview_idx"}),
 }
 
 # Safety gates that must exist (trigger name contains / equals these tokens).

@@ -743,3 +743,78 @@ Python 3.11.9 的 `pnpm verify` 通过，Vitest 160 项通过，pytest 197 项�
 **契约不变**：拆分前后 `python -m interviewer.cli openapi` 导出文件二进制一致（`fc /b` 无差异）；paths/method/parameters/requestBody/responses/security/tags/components 对齐。端点口径：**49 业务端点（44 + PracticeChat 5），openapi paths 43，含 `/api/openapi.json` 为 50**。Step 0「50 业务 / main 45」为笔误（本树无 `POST /api/resume/extract`）。无新依赖；不改错误码与鉴权。
 
 **回退**：恢复单体 `main.py` 并删除 `modules/` 即可。
+
+## D70 事件溯源 interview_events（Task 3）
+
+**状态**：本轮实施
+
+**设计依据**：`docs/ai-interviewer-architecture.md` §三数据模型 / §四 中 `interview_events` 设计要点。架构列出的 `event_type` 为 `state_changed` / `question_asked` / `answer_received` / `interrupted` / `score_computed`；本任务按提示词扩展 `consent_granted` 与 `report_generated`，并在本条记录与架构文档的差集。
+
+**表**：`interview_events(id, interview_id, seq, event_type, payload, ts, created_at, updated_at)`。唯一索引 `(interview_id, seq)`；`seq > 0`；`event_type` CHECK 七值；PG `payload JSONB`，SQLite `payload JSON`（底层 TEXT 存 JSON）。迁移：PG `0011_interview_events.sql`，SQLite `0005_interview_events.sql`（只追加）。
+
+**落库映射**（与业务同一 UoW，无异步补写）：
+
+| 用例 | 事件 |
+| --- | --- |
+| `submit_consent` | `consent_granted` |
+| `start` | `state_changed` + `question_asked`（首题） |
+| `turn`（作答） | `answer_received`；追问或下一题时再 `question_asked`；题单结束 `state_changed→wrapping_up`（formal 文字流可能同事务 `finish→scoring`） |
+| `pause` / 恢复 | `state_changed`（`paused` true/false） |
+| `media` 设备丢失自动暂停 | `interrupted` |
+| `finish` | `state_changed→scoring` |
+| `withdraw`（`finish(withdraw=True)`） | `state_changed→cancelled` |
+| `generate_report` | `score_computed` + `report_generated` + `state_changed→report_ready` |
+
+**只读回放**：`GET /api/admin/interviews/{id}/events`，admin 鉴权（admit 中间件），按 `seq` 升序；统一错误格式。端点口径相对 D69：业务端点 49→50（+events），含 `/api/openapi.json` 为 51。`schema_inventory` 业务表 16→17。
+
+### seq 生成策略
+
+**选型：单写入串行**（三选一中的第一项；非「MAX+1+唯一约束重试」、非「序列映射」）。
+
+实现：`events.next_seq` 在同一连接上 `COALESCE(MAX(seq),0)+1`，再 `INSERT`；**无应用层重试、无行锁/advisory lock、无 DB SEQUENCE**。DB `UNIQUE (interview_id, seq)` 仅作兜底。
+
+```python
+def next_seq(connection, interview_id: str) -> int:
+    current = db.scalar(
+        connection,
+        select(func.coalesce(func.max(db.interview_events.c.seq), 0)).where(
+            db.interview_events.c.interview_id == interview_id
+        ),
+    )
+    return int(str(current or 0)) + 1
+```
+
+**当前并发假设**：同一 `interview_id` 的事件写入假定为单写入者、单事务串行（候选人路径一次请求一个 UoW；评分/管理写入不与同场候选人写路径并行设计）。跨请求并发写同一场次**未**在应用层支持；竞态时依赖唯一约束失败，**无**重试。覆盖测试：`test_interview_events_unique_constraint_rejects_duplicate_seq`（重复 `(interview_id, seq)` 插入失败）；本轮不新增 threading 并发用例。
+
+**Task 6 实时网关注意**：WebSocket/多 worker 可能对同一 `interview_id` 并发 `append_event`。`MAX+1` 无锁会撞唯一约束。届时需决策：继续单写入串行（网关侧队列）、或改为「MAX+1+唯一约束重试」、或 PG `SEQUENCE`/每面试序列映射；**不要在未决策前假装并发安全**。锁/重试留给 Task 6，本轮不引入。
+
+### interrupted 语义（待决）
+
+**当前**：`interrupted` 仅表示「媒体设备丢失自动暂停」（`service.media` → `auto_pause`，payload 含 `source: media_device_lost`）。
+
+**Task 6 VAD 打断接入时待决**：复用 `interrupted` 并在 payload 加 `reason: device_lost | vad_barge_in`，还是新增独立 `event_type`。本条标记为**待决**，不改现有落库点。
+
+### PG 空库 migrate 可复现
+
+本机无常驻可登录 PG / 无 `TEST_DATABASE_URL` 时，可用 disposable `initdb` 集群验收（Task 3 实测命令；勿写入生产 data 目录）：
+
+```powershell
+$bin = 'C:\Users\wucong\pgsql\bin'   # 或本机 PostgreSQL bin
+$data = Join-Path $env:TEMP 'aii-pg-task3-data'
+$port = 55432
+Remove-Item -Recurse -Force $data -ErrorAction SilentlyContinue
+& "$bin\initdb.exe" -D $data -U aii -A trust --locale=C --encoding=UTF8
+Add-Content (Join-Path $data 'postgresql.conf') "listen_addresses = '127.0.0.1'`nport = $port"
+& "$bin\pg_ctl.exe" -D $data -l (Join-Path $data 'pg.log') -w start
+& "$bin\createdb.exe" -h 127.0.0.1 -p $port -U aii aii_task3_empty
+$env:PYTHONPATH = 'apps/api'; $env:DB_DRIVER = 'postgres'
+$env:DATABASE_URL = "postgresql://aii@127.0.0.1:$port/aii_task3_empty"
+& .\.venv-clean\Scripts\python.exe -m interviewer.cli migrate
+& "$bin\pg_ctl.exe" -D $data -m fast stop
+```
+
+Docker 等价思路：起一次性 Postgres 容器，设 `TEST_DATABASE_URL`/`DATABASE_URL` 后 `python -m interviewer.cli migrate`，用完销毁容器。
+
+**测试门禁**：`test_schema_parity` 中 PG 对照用例依赖 `TEST_DATABASE_URL`；未设置则 **skip**（SQLite 空库 migrate + 清单断言仍跑）。
+
+**无新依赖**。回退：停止部署 `0011`/`0005` 并去掉 `events.append_event` 调用与 admin 路由即可；已应用的迁移行保留。

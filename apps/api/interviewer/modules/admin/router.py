@@ -7,7 +7,7 @@ from uuid import UUID
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import Response
 
-from interviewer import assessment, governance, records
+from interviewer import assessment, events, governance, records
 from interviewer.contracts import ReportDocument
 from interviewer.errors import DomainError
 from interviewer.modules.common import actor_of, recruiter_write, service_of
@@ -58,6 +58,14 @@ def build_router() -> APIRouter:
         service = service_of(request)
         with service.database.unit_of_work() as connection:
             return records.detail(service, connection, str(interview_id), actor_of(request))
+
+    @router.get("/api/admin/interviews/{interview_id}/events", tags=["interviews"])
+    def interview_events(request: Request, interview_id: UUID) -> Object:
+        service = service_of(request)
+        with service.database.unit_of_work() as connection:
+            service.interview(connection, str(interview_id), True)
+            actor_of(request)
+            return {"interviewId": str(interview_id), "events": events.list_events(connection, str(interview_id))}
 
     @router.post("/api/admin/interviews/{interview_id}/score", tags=["assessment"], response_model=ReportDocument)
     def admin_score(request: Request, interview_id: UUID, body: EmptyInput) -> Response:

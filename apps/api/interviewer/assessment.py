@@ -7,7 +7,7 @@ from sqlalchemy import and_, select
 
 from .repository import StorageSession
 
-from . import database as db
+from . import database as db, events
 from .auth import Actor
 from .contracts import AssessmentSample, GraduateInput, Object, RevisionInput, ReviewInput, ScoreValue
 from .domain import FORMAL_CAMPUS_PLAN, FORMAL_CAMPUS_TOPICS, GRADUATE_POLICY, TOPICS, eligibility, fixture_assessment, scoring_prompt
@@ -185,6 +185,12 @@ def generate_report(service: Service, connection: StorageSession, interview_id: 
               "question_scores": assessments, "revision": revision, "highlights": [], "risks": [], "next_questions": [], "recommendation": "mixed",
               "recommendation_reason": "供人工复核", "metadata": metadata, "retained_until": interview["retained_until"], "prompt_version": "python-assessment-v1"})
     db.update(connection, db.interviews, interview_id, status="report_ready")
+    events.append_event(connection, interview_id, "score_computed",
+                        {"dimensionCount": len(dimension_results), "revision": revision})
+    events.append_event(connection, interview_id, "report_generated",
+                        {"revision": revision, "recommendation": "mixed"})
+    events.append_event(connection, interview_id, "state_changed",
+                        {"from": str(interview["status"]), "to": "report_ready", "via": "score"})
     service.audit(connection, "report.generated", interview_id, {"revision": revision, "transcriptHash": metadata["transcriptHash"]}, actor, interview_id)
     return Result(report_document(service, connection, interview_id))
 

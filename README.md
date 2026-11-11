@@ -38,7 +38,7 @@ $env:PYTHONPATH = 'apps/api'
 - API 契约为 `http://127.0.0.1:8000/api/openapi.json`，可用 `python -m interviewer.cli openapi` 导出本地文件。浏览器直接调用 API 可用对应的 API 客户端，应用未启用依赖外部 CDN 的交互式文档。
 - 网页通过 `POST /api/auth/login` 提交 `username` 与 `password`。本地合成演示会话在显式启用演示模式后可用空 JSON 对象建立。候选人 API 接受邀请返回的 `inviteToken` 作为 Bearer 令牌，回答前仍须明确同意。
 - 已有 PostgreSQL 16 时，填入 `DB_DRIVER=postgres` 和 `DATABASE_URL`，然后用同一迁移命令。已有脱敏快照可通过 `python -m interviewer.cli import-snapshot --file <文件>` 导入空库。
-- 迁移双链：Postgres 为 `apps/api/migrations/postgres/0000`–`0010`；SQLite 为 `0001_initial`（历史 squash）+ `0002_practice_sessions` + `0003_supporting_indexes` + `0004_integrity_guards`。空 SQLite 文件执行 `python -m interviewer.cli migrate` 一次即可建出与 PG 对齐的业务表、索引与同意/证据/枚举门禁。结构对等由 `apps/api/tests/test_schema_parity.py` 断言（有 `TEST_DATABASE_URL` 时同时跑 PG16）。本机无可用 PG 时，降级验收为 SQLite 空库 migrate + 迁移 SQL 语法/清单检查 + PRAGMA 列与门禁比对。
+- 迁移双链：Postgres 为 `apps/api/migrations/postgres/0000`–`0011`；SQLite 为 `0001_initial`（历史 squash）+ `0002_practice_sessions` + `0003_supporting_indexes` + `0004_integrity_guards` + `0005_interview_events`。空库执行 `python -m interviewer.cli migrate` 一次即可建出与 PG 对齐的业务表（含 `interview_events`）、索引与同意/证据/枚举门禁。结构对等由 `apps/api/tests/test_schema_parity.py` 断言（有 `TEST_DATABASE_URL` 时同时跑 PG16；无则该用例 skip）。本机无可用 PG 时，降级验收为 SQLite 空库 migrate + 迁移 SQL 语法/清单检查 + PRAGMA 列与门禁比对；可复现的 disposable PG `initdb`/`pg_ctl` 命令见 [D70](DECISIONS.md#d70-事件溯源-interview_eventstask-3)。
 
 ## 文本与本地音频面试
 
@@ -115,7 +115,8 @@ FastAPI 默认使用 `127.0.0.1:8000`。端口已被占用时可运行 `node scr
   - `operations/` 健康检查 · `auth/` 账号登录 · `feishu/` 飞书身份 · `jobs/` 岗位
   - `candidates/` 候选人录入 · `interviews/` 邀约与候选人作答 · `assessment/` 评分报告
   - `admin/` 治理与管理员记录 · `practice/` 本机练习对话（挂载 `PracticeChat`）
-- 业务写入、评分与持久化仍在 `service.py` / `assessment.py` / `governance.py` 等既有模块；`modules/*/schemas.py` 仅再导出 `contracts`
+- 业务写入、评分与持久化仍在 `service.py` / `assessment.py` / `governance.py` 等既有模块；事件追加在 `events.py`；`modules/*/schemas.py` 仅再导出 `contracts`
+- `interview_events`：append-only 事件表，唯一索引 `(interview_id, seq)`；应用层 `MAX(seq)+1` 单调递增，DB 唯一约束兜底
 
 ### 飞书免登（后端骨架）
 
@@ -150,7 +151,7 @@ fake 模型生成确定性演示评价，请使用合成资料。正式使用时
 
 英语四级须达到 425 分，研究生期间曾挂科门数须为 0，补考或重修后通过仍计入。两道资格题须作答，暂不确定可填写待核验。若面试计时结束，系统先补问尚未完成的资格题。资格以人工核验证明为准，已核验不达标会单独标为不满足硬性资格，能力评分继续展示。末题提交后进入待评价。
 
-独立管理员通过 `GET /api/admin/interviews` 分页查阅保留期内各状态的场次，通过 `GET /api/admin/interviews/{id}` 查看详情，通过 `POST /api/admin/interviews/{id}/score` 为已结束面试生成证据评价。撤回后只展示场次状态和基本信息。评价复用现有证据校验和人工复核机制。
+独立管理员通过 `GET /api/admin/interviews` 分页查阅保留期内各状态的场次，通过 `GET /api/admin/interviews/{id}` 查看详情，通过 `GET /api/admin/interviews/{id}/events` 按 `seq` 升序回放该场 `interview_events`（同意、开场、作答、暂停、打断、完结、评分与报告等），通过 `POST /api/admin/interviews/{id}/score` 为已结束面试生成证据评价。撤回后只展示场次状态和基本信息。评价复用现有证据校验和人工复核机制。业务写入与事件写入同一事务；`payload` 在 Postgres 为 `jsonb`，在 SQLite 为 JSON 文本。
 
 历史网页语音联调的环境和范围见 [D52](DECISIONS.md#d52-独立后端的网页语音联调)。
 
