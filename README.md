@@ -108,6 +108,15 @@ FastAPI 默认使用 `127.0.0.1:8000`。端口已被占用时可运行 `node scr
 | `apps/api/interviewer/feishu.py` | 飞书出网端口（Live/Fake）与 OAuth state / 事件解密 |
 | `apps/web/integrations/feishu/` | 前端 JSAPI / 免登 / 后端桥接占位，可从 `@/integrations/feishu` 引用 |
 
+### 后端目录（FastAPI）
+
+- `apps/api/interviewer/main.py`：应用装配（lifespan、中间件、admit、异常处理、`include_router`、OpenAPI 元信息）
+- `apps/api/interviewer/modules/`：按领域拆分的 HTTP 路由（纯装配，不改契约）
+  - `operations/` 健康检查 · `auth/` 账号登录 · `feishu/` 飞书身份 · `jobs/` 岗位
+  - `candidates/` 候选人录入 · `interviews/` 邀约与候选人作答 · `assessment/` 评分报告
+  - `admin/` 治理与管理员记录 · `practice/` 本机练习对话（挂载 `PracticeChat`）
+- 业务写入、评分与持久化仍在 `service.py` / `assessment.py` / `governance.py` 等既有模块；`modules/*/schemas.py` 仅再导出 `contracts`
+
 ### 飞书免登（后端骨架）
 
 未配置时相关接口返回 `FEISHU_NOT_CONFIGURED`。`GET /api/feishu/status` 只返回公开字段；`POST /api/feishu/oauth/callback` 校验一次性 state 后按 open_id 白名单签发 `aii_recruiter` / `aii_admin` cookie。`POST /api/feishu/events` 支持 url_verification 与可选 Encrypt Key 解密。登录页本轮未接线，账号密码登录不变。

@@ -733,3 +733,13 @@ Python 3.11.9 的 `pnpm verify` 通过，Vitest 160 项通过，pytest 197 项�
 - 本条补齐：parity **不是**全量 DDL 证明、以及 a/b/c 的证据与影响面（D67 仅点名差异、未写影响评估）。
 
 **后续护栏**：后续任务（如事件溯源、Celery 清理）若引入裸 SQL 或批量 update 写入，必须显式赋值所有 server DEFAULT 有差异的列，或先追加 SQLite 迁移对齐 DEFAULT；否则双库落值可能不一致。
+
+## D69 路由模块化拆分（纯重构）
+
+**状态**：本轮实施（Task 2）
+
+将 `main.py` 中的业务路由按领域迁入 `apps/api/interviewer/modules/<name>/{router,schemas,service}.py`：`operations`、`auth`、`feishu`、`jobs`、`candidates`、`interviews`、`assessment`、`admin`、`practice`。`main.py` 只保留 lifespan、admit 中间件、CORS、异常处理、`include_router` 顺序与 OpenAPI security/requestBody 后处理。共享写入助手在 `modules/common.py`。
+
+**契约不变**：拆分前后 `python -m interviewer.cli openapi` 导出文件二进制一致（`fc /b` 无差异）；paths/method/parameters/requestBody/responses/security/tags/components 对齐。端点口径：**49 业务端点（44 + PracticeChat 5），openapi paths 43，含 `/api/openapi.json` 为 50**。Step 0「50 业务 / main 45」为笔误（本树无 `POST /api/resume/extract`）。无新依赖；不改错误码与鉴权。
+
+**回退**：恢复单体 `main.py` 并删除 `modules/` 即可。

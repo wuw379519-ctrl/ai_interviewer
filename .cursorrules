@@ -39,7 +39,7 @@ TypeScript changes also require `pnpm lint`, `pnpm typecheck`, `pnpm test`, and 
 
 - Failures use `{ error: { code, message, details } }`.
 - Write endpoints support idempotency keys.
-- Endpoint inventory for acceptance: **50** business routes (`main.py` 45 + `PracticeChat.mount` 5); with OpenAPI export that is **51** (`GET /api/openapi.json`). Do not treat other counts as the gate.
+- Endpoint inventory for acceptance: **49** business endpoints (44 + `PracticeChat.mount` 5), openapi paths **43**, including `GET /api/openapi.json` that is **50** registered `/api` routes. Step 0’s “50 business / main 45” was a miscount (this tree has no `POST /api/resume/extract`). Do not treat other counts as the gate.
 
 ## Design source of truth
 
