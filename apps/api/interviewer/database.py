@@ -52,8 +52,9 @@ def txt(name: str, default: str | None = None, nullable: bool = True) -> Column[
     return Column(name, Text, nullable=nullable, default=default)
 
 
-def integer(name: str, default: int = 0, nullable: bool = False) -> Column[int]:
-    return Column(name, Integer, nullable=nullable, default=default)
+def integer(name: str, default: int | None = 0, nullable: bool = False) -> Column[int]:
+    # Nullable integers must default to NULL; a zero default breaks offset/evidence CHECKs.
+    return Column(name, Integer, nullable=nullable, default=None if nullable else default)
 
 
 def boolean(name: str, default: bool = False) -> Column[bool]:

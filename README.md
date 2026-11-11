@@ -38,6 +38,7 @@ $env:PYTHONPATH = 'apps/api'
 - API 契约为 `http://127.0.0.1:8000/api/openapi.json`，可用 `python -m interviewer.cli openapi` 导出本地文件。浏览器直接调用 API 可用对应的 API 客户端，应用未启用依赖外部 CDN 的交互式文档。
 - 网页通过 `POST /api/auth/login` 提交 `username` 与 `password`。本地合成演示会话在显式启用演示模式后可用空 JSON 对象建立。候选人 API 接受邀请返回的 `inviteToken` 作为 Bearer 令牌，回答前仍须明确同意。
 - 已有 PostgreSQL 16 时，填入 `DB_DRIVER=postgres` 和 `DATABASE_URL`，然后用同一迁移命令。已有脱敏快照可通过 `python -m interviewer.cli import-snapshot --file <文件>` 导入空库。
+- 迁移双链：Postgres 为 `apps/api/migrations/postgres/0000`–`0010`；SQLite 为 `0001_initial`（历史 squash）+ `0002_practice_sessions` + `0003_supporting_indexes` + `0004_integrity_guards`。空 SQLite 文件执行 `python -m interviewer.cli migrate` 一次即可建出与 PG 对齐的业务表、索引与同意/证据/枚举门禁。结构对等由 `apps/api/tests/test_schema_parity.py` 断言（有 `TEST_DATABASE_URL` 时同时跑 PG16）。本机无可用 PG 时，降级验收为 SQLite 空库 migrate + 迁移 SQL 语法/清单检查 + PRAGMA 列与门禁比对。
 
 ## 文本与本地音频面试
 

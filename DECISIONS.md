@@ -643,3 +643,93 @@ Python 3.11.9 的 `pnpm verify` 通过，Vitest 160 项通过，pytest 197 项�
 **回退**：移除 `apps/api/interviewer/feishu.py`、相关路由与 `apps/web/integrations/feishu/`，并还原 Settings / `.env.example` / README 飞书段落。
 
 本轮补丁：增加 `GET /api/feishu/oauth/start`（nonce cookie 防 CSRF）、事件端强制 verification token 且未知事件只打日志不写审计、换码改为 authen v2、删除前端 `server-only` shim（密钥仅 Python）。若将来 Next 服务端要读密钥，再引入官方 `server-only` 并另立决策。
+
+## D67 SQLite 迁移链与 Postgres 语义对齐
+
+**状态**：本轮实施（Task 1）
+
+**差异清单（动手前）**：已提交 HEAD 上 SQLite 仅有 `0001_initial`（squash）与 `0002_practice_sessions`。相对 Postgres `0000`–`0010`：
+
+| 主题 | PG 来源 | HEAD SQLite 缺口 | 处理 |
+| --- | --- | --- | --- |
+| 业务表与列（保留期/暂停/语音/校招/治理/擦除） | 0000+0003–0009 | squash 已含同名列；jsonb→JSON/TEXT | 不改 `0001` |
+| practice_sessions | 0010 | 已有 `0002` | 不改 |
+| 查询索引（非唯一） | 0000/0008/0009 | 缺同名 INDEX | 追加 `0003_supporting_indexes` |
+| 枚举/完整性 CHECK | 0001/0004/0006/0007 | squash 仅部分 CHECK；SQLite 无法 `ADD CHECK` | 追加 `0004_integrity_guards` 触发器 |
+| consent/evidence 门禁 | 0002 | squash 已有等价触发器 | 保持 |
+| `touch_updated_at` | 0002 | 无 | 由 SQLAlchemy `onupdate` 承担，不强制方言触发器 |
+| bars level `@>` | 0001 | 仅校验数组长度 5 | 可接受方言差；令牌清单不强制 |
+
+编号说明：任务书写「从 0005 起」是以工作区曾出现未提交的 `0003`/`0004` 为前提；本分支自 clean HEAD（仅 `0001`/`0002`）追加，故文件名为 `0003`/`0004`。
+
+**PG 验收环境**：本机无 Docker、无监听中的 Postgres（`psql` 客户端在、5432 拒绝连接），`TEST_DATABASE_URL` 未设置。降级验收：空 SQLite `migrate` + `test_schema_parity` 的 PRAGMA/清单/SQL 解析断言；PG16 对照用例保持 skip，待有 disposable PG16 再跑。
+
+**实现**：`schema_inventory.py` 共享表/列可空性/索引/门禁令牌；`test_schema_parity.py` 扩展 PRAGMA 与迁移文件不可变命名检查。可空整型列在 `integer(..., nullable=True)` 时默认 `NULL`，避免省略字段写入 `0` 误触 `evidence_offsets_valid`。设计真源为 `docs/ai-interviewer-architecture.md`。无新依赖；不改 API 契约。回退可停止应用未部署的 `0003`/`0004`；已写入 `__python_migrations` 的行保留。
+
+## D68 Task 1 结论复核：parity 范围与方言差影响评估
+
+**状态**：本轮记录（只补决策，不改代码/迁移）
+
+### 1. `test_schema_parity` 实际对比什么
+
+不是「把 PG 全量 information_schema 倒过来逐条 diff SQLite」。范围是：
+
+1. **规范清单**（`schema_inventory.py`）：固定 16 张 `BUSINESS_TABLES` + `REQUIRED_COLUMNS`（列名与可空性）+ `REQUIRED_INDEXES` + 门禁/完整性令牌；SQLite 空库 `migrate` 后 `assert_matches_canonical`。
+2. **有 `TEST_DATABASE_URL` 时**：同一清单在 PG16 再跑一遍，并交叉比对两边 **列名集合与可空性**（仍不比 DEFAULT、不比全部 CHECK 名、不比触发器 SQL 文本）。
+
+因此它是「清单覆盖的业务 schema 是否齐」，不是「PG DDL 全集 ⊆ SQLite」。
+
+**覆盖边界（验收口径）**：`test_schema_parity` / `schema_inventory` 的对比范围是 16 表 + 列可空性 + 指定索引名 + 门禁令牌；通过 ≠ 全量 DDL 一致，仅表示清单内一致。清单外差异（`@>`、`touch_updated_at`、server DEFAULT）见本条 a/b/c。
+
+### 2. 相对 PG `0000`–`0010` 的差集（清单外）
+
+| 类别 | 差集 | 说明 |
+| --- | --- | --- |
+| 表 | **空** | 16 张业务表双边都有（含 `practice_sessions`） |
+| 列（业务列名） | **空** | squash `0001` + `0002` 已含 PG 增量列 |
+| 命名约束/能力 | `competencies_bars_levels_valid`（`bars_anchors @>` level 1–5） | 仅 PG `0001_integrity.sql`；SQLite 只有长度=5 触发器 |
+| 触发器 | `aii_touch_updated_at` / 各表 `touch_updated_at` | 仅 PG `0002`；SQLite 无 |
+| 列级 server DEFAULT | 多列 PG 有、SQLite DDL 无（见下） | 不在 parity 断言内 |
+
+### 3. 四项差异影响评估
+
+**a) `bars @>`**
+
+- 全仓库业务/测试 Python 中 **`@>` 字面量仅出现在** `apps/api/migrations/postgres/0001_integrity.sql`。
+- 正式写入路径：`service.save_competencies` → `bars_anchors: [anchor.payload() for anchor in dimension.bars]`；`contracts.Competency` 强制 `bars` 长度 5 且 `{level}=={1..5}`。
+- 结论：正式业务路径 **不依赖** DB 侧 `@>`；靠 Pydantic。DB `@>` 只挡住绕过应用的原始 SQL。SQLite 缺该 CHECK **不改变应用行为**。
+
+**b) `touch_updated_at`**
+
+- SQLite 维护方：`database.table()` 上 `updated_at` 的 SQLAlchemy `default=now, onupdate=now`；`db.update()` **显式** `updated_at=now()`；另有 `consents` 撤回、`governance` 擦除幂等键等路径显式赋值。
+- 审计排序/展示用 `created_at`；保留期/过期用 `retained_until`；报告逻辑不读 `updated_at` 做闸门（代码中无 `order_by(updated_at)` / 业务判定）。
+- 结论：缺 PG 触发器时，**凡走 `db.update`/Column onupdate 的路径仍刷新**；仅「绕过 SQLAlchemy 的裸 UPDATE」会陈旧。当前后端写入不走裸 UPDATE。不挡验收。
+
+**c) 列 DEFAULT（PG 有 server default、SQLite CREATE 无）**
+
+代表性列（同名列双边都有，仅 DDL default 不同）：  
+`jobs.status` / `jobs.recruitment_track`；`competencies.order_index|status`；`consents.recording_allowed`；`interviews.status|mode|locale|version|current_question_seq|paused_total_sec|camera_*|microphone_active|text_fallback|recruitment_track|retention_days`；`questions.status|followups|mandatory|assessment_mode`；`turns.is_followup|redacted`；`scores.needs_review|attempt`；`idempotency_keys.status`；`reports.question_scores|revision|generated_at`；`candidates.retained_until`；`data_policies.*`；以及各表 `id` 的 `gen_random_uuid()`。
+
+业务 INSERT 抽查：
+
+| 写入 | 省略的列 | 谁补值 |
+| --- | --- | --- |
+| `create_job` | `status`（`JobCreate` 无此字段） | Column `default='draft'` |
+| `invite` 写 `interviews` | `locale/version/current_question_seq/paused_total_sec/camera_active/...` | Column defaults（`zh-CN`/`0`/`False` 等）；`retained_until`/`status`/`mode`/`recruitment_track`/`retention_days` **显式** |
+| `questions` | `status` | Column `default='pending'`；其余计划字段显式 |
+| `append` 写 `turns` | `redacted` | Column `default=False`；`is_followup` 显式 |
+| `scores`/`reports` | — | `attempt`/`needs_review`/`question_scores`/`revision`/`retained_until` **显式**；`generated_at` 靠 Column `default=now` |
+| `candidates` | — | `retained_until` **显式**（非靠 PG `now()+90d`） |
+| `data_policies` | — | migrate 后 `insert_if_absent` **显式** workspace 行 |
+
+结论：正式 `db.insert` 路径由 **SQLAlchemy Column default + 业务显式字段** 对齐；不会因缺 server DEFAULT 在双库落出不同业务值。风险仅限绕过 ORM 的手写 SQL。不挡验收、不追加迁移。
+
+**d) 门禁松紧**：与 schema 清单无关，本条不展开（按任务要求跳过）。
+
+### 4. 结论
+
+- 表/列差集为空；a/b/c 均无「正式业务路径行为分歧」。
+- **维持「无需追加 SQLite `0005+`」**；D67 的迁移文件集合不变。
+- 本条补齐：parity **不是**全量 DDL 证明、以及 a/b/c 的证据与影响面（D67 仅点名差异、未写影响评估）。
+
+**后续护栏**：后续任务（如事件溯源、Celery 清理）若引入裸 SQL 或批量 update 写入，必须显式赋值所有 server DEFAULT 有差异的列，或先追加 SQLite 迁移对齐 DEFAULT；否则双库落值可能不一致。

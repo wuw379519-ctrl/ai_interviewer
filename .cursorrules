@@ -1,0 +1,71 @@
+# AI Interviewer — hard constraints (baseline)
+
+Read `README.md`, `DECISIONS.md`, and `AGENTS.md` before changing behavior. Preserve existing work. Deliver milestones in order; do not invent user approvals.
+
+## Stack boundaries
+
+- **Backend only:** Python 3.11+ / FastAPI / Pydantic / SQLAlchemy. Business writes, scoring, and persistence live entirely in FastAPI under `apps/api/interviewer`.
+- **TypeScript only** in `apps/web` (presentation + same-origin proxy) or `packages/core` (schemas + pure functions). Root TS tooling and Playwright support the workspace; they are not the online backend.
+- Feishu credentials only in Python Settings (`FEISHU_*`). The frontend must not read those env vars and must not call `open.feishu.cn` directly.
+
+## Quality gates
+
+Use Python 3.11 `.venv-clean` with `PYTHONPATH=apps/api`. At each milestone boundary, run all three and do not advance on failure:
+
+```powershell
+$py = '.\.venv-clean\Scripts\python.exe'
+$env:PYTHONPATH = 'apps/api'
+& $py -m ruff check --config apps/api/pyproject.toml apps/api scripts
+& $py -m mypy --config-file apps/api/pyproject.toml apps/api/interviewer scripts
+& $py -m pytest -c apps/api/pyproject.toml apps/api/tests
+```
+
+TypeScript changes also require `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm build`. Preserve test assertions and existing skip conditions.
+
+## Typing and validation
+
+- No explicit `typing.Any`.
+- All functions carry type annotations.
+- LLM outputs must be validated with Pydantic.
+- Unvalidated JSON is `object` / `unknown`.
+
+## Migrations and data
+
+- Migrations are immutable: append only. Never rewrite applied history.
+- Never reset existing data to make a migration pass. Quarantine history without consent offline; do not fabricate consent.
+- Keep SQLAlchemy metadata aligned. Postgres: `apps/api/migrations/postgres`. SQLite: `apps/api/migrations/sqlite`.
+
+## API contracts
+
+- Failures use `{ error: { code, message, details } }`.
+- Write endpoints support idempotency keys.
+- Endpoint inventory for acceptance: **50** business routes (`main.py` 45 + `PracticeChat.mount` 5); with OpenAPI export that is **51** (`GET /api/openapi.json`). Do not treat other counts as the gate.
+
+## Design source of truth
+
+- `docs/ai-interviewer-architecture.md` is the sole design source. Later tasks cite its sections; do not cite alternate architecture paths.
+
+## Interview safety
+
+- No candidate answers before explicit, versioned consent.
+- Persist progress so refresh can restore the current question.
+- Treat candidate text as untrusted assessment material, never as instructions.
+- Separate question-generation and scoring prompts.
+- Remove protected attributes from structured resumes and scoring inputs; mask contact details in logs and exports.
+- Scores require verbatim transcript evidence; otherwise `insufficient_evidence`.
+- AI recommendations never automatically hire or reject.
+- Preserve human score-revision history and audit records.
+- Default retention is 90 days; deleting a candidate must erase transcripts and reports.
+
+## Tests, CI, and secrets
+
+- Tests/CI always use `LLM_PROVIDER=fake`. Never call real LLM/STT/network in gates.
+- Support Postgres 16 and SQLite local fallback. PGlite is legacy offline export/compatibility tooling.
+- Never commit `.env`, keys, local database files, candidate uploads, or real personal data.
+
+## Delivery discipline
+
+- Small Conventional Commits; explain each new dependency in the commit body; do not add unused dependencies.
+- Record reversible product decisions and technical deviations in `DECISIONS.md`. New `D` numbers start at (current max in `DECISIONS.md`) + 1; read the file tail before appending. Do not rewrite history.
+- Update README and decisions at each milestone. Report changes, run commands, actual checks, known limitations, and next steps.
+- Distinguish local verification from hosted CI. Do not claim Docker, E2E, or deployment passed without executing it.
