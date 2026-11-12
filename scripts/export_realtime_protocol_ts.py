@@ -8,7 +8,13 @@ Output: packages/core/src/realtime-protocol.ts
 """
 from __future__ import annotations
 
-from interviewer.realtime.protocol import CLIENT_TYPES, PROTOCOL_VERSION, SERVER_TYPES
+from interviewer.realtime.protocol import (
+    CLIENT_TYPES,
+    MAX_AUDIO_CHUNK_BASE64_CHARS,
+    MAX_AUDIO_CHUNK_PCM_BYTES,
+    PROTOCOL_VERSION,
+    SERVER_TYPES,
+)
 from interviewer.settings import ROOT
 
 
@@ -20,6 +26,8 @@ def main() -> None:
 /* Source: apps/api/interviewer/realtime/protocol.py */
 
 export const REALTIME_PROTOCOL_VERSION = "{PROTOCOL_VERSION}" as const;
+export const REALTIME_MAX_AUDIO_CHUNK_PCM_BYTES = {MAX_AUDIO_CHUNK_PCM_BYTES} as const;
+export const REALTIME_MAX_AUDIO_CHUNK_BASE64_CHARS = {MAX_AUDIO_CHUNK_BASE64_CHARS} as const;
 
 export type RealtimeClientType = {client};
 export type RealtimeServerType = {server};
@@ -28,8 +36,8 @@ export type RealtimeClientMessage =
   | {{ v: typeof REALTIME_PROTOCOL_VERSION; type: "auth"; token: string; resumeFromSeq?: number }}
   | {{ v: typeof REALTIME_PROTOCOL_VERSION; type: "start" }}
   | {{ v: typeof REALTIME_PROTOCOL_VERSION; type: "audio_chunk"; seq: number; pcmBase64?: string; format?: "pcm16le_16k" }}
-  | {{ v: typeof REALTIME_PROTOCOL_VERSION; type: "text_input"; text: string; expectedQuestionSeq?: number }}
-  | {{ v: typeof REALTIME_PROTOCOL_VERSION; type: "end_turn" }}
+  | {{ v: typeof REALTIME_PROTOCOL_VERSION; type: "text_input"; text: string; idempotencyKey: string; expectedQuestionSeq?: number }}
+  | {{ v: typeof REALTIME_PROTOCOL_VERSION; type: "end_turn"; idempotencyKey?: string }}
   | {{ v: typeof REALTIME_PROTOCOL_VERSION; type: "interrupt" }}
   | {{ v: typeof REALTIME_PROTOCOL_VERSION; type: "ping"; t?: number }}
   | {{ v: typeof REALTIME_PROTOCOL_VERSION; type: "close"; reason?: string }};
@@ -40,7 +48,7 @@ export type RealtimeServerMessage =
   | {{ v: typeof REALTIME_PROTOCOL_VERSION; type: "partial_transcript"; text: string }}
   | {{ v: typeof REALTIME_PROTOCOL_VERSION; type: "final_transcript"; text: string }}
   | {{ v: typeof REALTIME_PROTOCOL_VERSION; type: "tts_chunk"; seq: number; audioBase64?: string }}
-  | {{ v: typeof REALTIME_PROTOCOL_VERSION; type: "interrupted"; at?: string }}
+  | {{ v: typeof REALTIME_PROTOCOL_VERSION; type: "interrupted"; at?: string; reason?: "vad_barge_in" | "client" | "device_lost" }}
   | {{ v: typeof REALTIME_PROTOCOL_VERSION; type: "error"; code: string; message: string }}
   | {{ v: typeof REALTIME_PROTOCOL_VERSION; type: "pong"; t?: number }}
   | {{ v: typeof REALTIME_PROTOCOL_VERSION; type: "state_changed"; status: string; detail?: Record<string, unknown> }}

@@ -788,11 +788,15 @@ def next_seq(connection, interview_id: str) -> int:
 
 **Task 6 实时网关注意**：WebSocket/多 worker 可能对同一 `interview_id` 并发 `append_event`。`MAX+1` 无锁会撞唯一约束。届时需决策：继续单写入串行（网关侧队列）、或改为「MAX+1+唯一约束重试」、或 PG `SEQUENCE`/每面试序列映射；**不要在未决策前假装并发安全**。锁/重试留给 Task 6，本轮不引入。
 
-### interrupted 语义（待决）
+### interrupted 语义（已落定 · Task 6b）
 
-**当前**：`interrupted` 仅表示「媒体设备丢失自动暂停」（`service.media` → `auto_pause`，payload 含 `source: media_device_lost`）。
+复用 `event_type=interrupted`，payload 必含 `reason`：
 
-**Task 6 VAD 打断接入时待决**：复用 `interrupted` 并在 payload 加 `reason: device_lost | vad_barge_in`，还是新增独立 `event_type`。本条标记为**待决**，不改现有落库点。
+- `device_lost`：媒体设备丢失自动暂停（`service.media` → `auto_pause`，`source: media_device_lost`）
+- `vad_barge_in`：实时 WS 能量 VAD 打断 TTS（`source: ws_vad`）
+- 客户端主动 `interrupt` 帧：`reason: client`（`source: ws_client`）
+
+不新增独立 `event_type`。
 
 ### PG 空库 migrate 可复现
 
@@ -928,12 +932,26 @@ Docker 等价思路：起一次性 Postgres 容器，设 `TEST_DATABASE_URL`/`DA
 - **客户端**：收到 close `4000` 应视为被顶替。重连使用 **指数退避**（建议首延迟 ≥1.5s，上限约 8s，可加抖动），且 **同一 tab 被 4000 后不应与另一存活端抢连**（多设备同时开面试页会互踢——产品上应避免；退避用于降低循环频率，不能从协议层消灭双端争用）。普通断线（非 4000）可用较短固定延迟重连。
 - **观测字段**：6a `LiveSession` 仅有 `created_at` / `connection_id`，**无**顶替计数或 last-active 区分「真重连 vs 多设备」。7b 若需防互踢，再加 `replaceCount` / `lastActiveAt` 或设备指纹（另开 D）。
 
-## D75 Task 7b 协议前置：text_input / audio_chunk 字段缺口
+## D75 Task 6b 协议字段补齐：text_input / audio_chunk
 
-**状态**：记录（6a 收尾；7b 开工前必读）
+**状态**：已落地（Task 6b）
 
-**text_input（现状）**：`text` + 可选 `expectedQuestionSeq`。**无** `turnId` / `idempotencyKey`。REST `/turns` 依赖 HTTP `Idempotency-Key`；WS 路径 7b 必须补协议字段（建议 `idempotencyKey` 必填或与 `clientMsgId` 等价），否则重连重放会双写 turn。
+**text_input**：必填 `idempotencyKey`（8–200），经 `service.write_with_key` 写入 `idempotency_keys`，scope=`WS /turns`。可选 `expectedQuestionSeq`。
 
-**audio_chunk（现状）**：JSON 文本帧 + 可选 `pcmBase64`，`format` 固定字面量 `pcm16le_16k`，另有分片 `seq`。**未**定义二进制 WebSocket 帧或 multipart。7b 若走二进制 PCM，需新增帧类型或 `content-type` 约定并重导出 TS；若继续 base64 JSON，需补最大分片字节、是否允许缺省 `pcmBase64` 的空心跳片等。
+**audio_chunk**：保持 JSON + 可选 `pcmBase64`（`pcm16le_16k`）；单片 PCM ≤32000 字节、base64 ≤44000 字符；`seq` 连接内严格递增；允许缺省 `pcmBase64` 作为空片。二进制帧未采用——若延迟不达标再开 D 改二进制并重导出 TS。
 
-**Gateway**：调用形态仍遵 D73（C）。本条只约束协议字段，不改 6a 运行时行为。
+**Gateway**：D73（C）不变。
+
+## D76 Task 6b：实时 pipeline / VAD / 打断
+
+**状态**：已裁决（本轮实施）
+
+**编排**：复用 `service.turn`（经 `write_with_key`），不新建 WS 专用 orchestrator——题序/追问/事件落库与 REST 共用，避免双编排漂移。
+
+**VAD**：能量阈值 RMS（`realtime/vad.py`），非 Whisper。理由：门禁禁真实 STT；Whisper 是 ASR 不是端点检测；能量阈值可测且满足 200ms 打断预算。
+
+**打断**：VAD onset 且 TTS playing → cancel 队列 + `interrupted(reason=vad_barge_in)` + append_event；顶替连接时 `pipeline.cancel()` 丢弃 in-flight。
+
+**延迟**：fake ASR/TTS 打点见 `docs/acceptance/task6b-realtime-latency.md`；入口 `scripts/measure_realtime_latency.py`。
+
+**回退**：关闭 WS pipeline 处理，保留 6a ack 骨架与 SSE 降级。

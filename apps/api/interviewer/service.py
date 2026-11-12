@@ -169,6 +169,24 @@ class Service:
               work: Callable[[], Result], candidate_id: str | None = None, interview_id: str | None = None,
               fresh: Callable[[], Object] | None = None) -> Result:
         key = request.headers.get("idempotency-key", "").strip()
+        return self.write_with_key(
+            connection, scope, key, body, work,
+            candidate_id=candidate_id, interview_id=interview_id, fresh=fresh,
+        )
+
+    def write_with_key(
+        self,
+        connection: StorageSession,
+        scope: str,
+        key: str,
+        body: Contract | Object,
+        work: Callable[[], Result],
+        candidate_id: str | None = None,
+        interview_id: str | None = None,
+        fresh: Callable[[], Object] | None = None,
+    ) -> Result:
+        """Idempotent write shared by REST (via write) and WS turns (D75)."""
+        key = key.strip()
         if len(key) > 200:
             raise DomainError("VALIDATION_FAILED", "幂等键不能超过200字符")
         payload = body.payload() if isinstance(body, Contract) else body
@@ -484,7 +502,8 @@ class Service:
                   text_fallback=fallback, media_last_seen_at=db.now(), paused_at=paused)
         if auto_pause:
             events.append_event(connection, identity, "interrupted",
-                                {"reason": body.reason, "status": str(row["status"]), "source": "media_device_lost"})
+                                {"reason": "device_lost", "detail": body.reason,
+                                 "status": str(row["status"]), "source": "media_device_lost"})
         self.audit(connection, "media.updated", identity, body.payload(), Actor("candidate", identity, "候选人"), identity)
         return Result({"interviewId": identity, "status": str(row["status"]), "pausedAt": db.iso(paused) if paused else None})
 

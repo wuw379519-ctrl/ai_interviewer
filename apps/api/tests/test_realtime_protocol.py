@@ -29,6 +29,19 @@ def test_rejects_unknown_type_and_empty_text() -> None:
         parse_client_json('{"v":"aii-ws-v1","type":"nope"}')
     with pytest.raises(ValidationError):
         parse_client_json('{"v":"aii-ws-v1","type":"text_input","text":""}')
+    with pytest.raises(ValidationError):
+        parse_client_json(
+            '{"v":"aii-ws-v1","type":"text_input","text":"hi","idempotencyKey":"short"}'
+        )
+
+
+def test_text_input_requires_idempotency_key() -> None:
+    msg = parse_client_json(
+        '{"v":"aii-ws-v1","type":"text_input","text":"回答内容",'
+        '"idempotencyKey":"ws-key-abcdefgh"}'
+    )
+    assert msg.type == "text_input"
+    assert msg.idempotency_key == "ws-key-abcdefgh"
 
 
 def test_server_ready_dumps_aliases() -> None:

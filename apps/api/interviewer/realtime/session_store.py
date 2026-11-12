@@ -14,6 +14,7 @@ from interviewer.contracts import Object
 from interviewer.tenancy import reset_current_tenant, set_current_tenant
 
 if TYPE_CHECKING:
+    from interviewer.realtime.pipeline import RealtimePipeline
     from interviewer.service import Service
 
 CLOSE_SUPERSEDED = 4000
@@ -27,6 +28,7 @@ class LiveSession:
     websocket: WebSocket
     created_at: float = field(default_factory=time.monotonic)
     write_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    pipeline: RealtimePipeline | None = None
 
 
 class SessionStore:
@@ -53,6 +55,9 @@ class SessionStore:
             previous = self._sessions.get(interview_id)
             self._sessions[interview_id] = session
         if previous is not None and previous.connection_id != connection_id:
+            # D74/D75: abandon in-flight turn on the superseded connection.
+            if previous.pipeline is not None:
+                previous.pipeline.cancel()
             try:
                 await previous.websocket.close(code=CLOSE_SUPERSEDED, reason="superseded")
             except Exception:
@@ -63,6 +68,8 @@ class SessionStore:
         async with self._guard:
             current = self._sessions.get(interview_id)
             if current and current.connection_id == connection_id:
+                if current.pipeline is not None:
+                    current.pipeline.cancel()
                 del self._sessions[interview_id]
 
     def get(self, interview_id: str) -> LiveSession | None:

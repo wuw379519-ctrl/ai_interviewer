@@ -1,4 +1,4 @@
-"""WebSocket entry: /ws/interview/{session_id} — auth + heartbeat + resume (no audio pipeline)."""
+"""WebSocket entry: /ws/interview/{session_id} — auth + heartbeat + resume + pipeline."""
 from __future__ import annotations
 
 import hashlib
@@ -11,6 +11,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
 from interviewer import database as db
+from interviewer.realtime.pipeline import RealtimePipeline
 from interviewer.realtime.protocol import (
     AuthMessage,
     CloseMessage,
@@ -18,7 +19,6 @@ from interviewer.realtime.protocol import (
     ErrorMessage,
     EventReplayMessage,
     InterruptMessage,
-    InterruptedMessage,
     PingMessage,
     PongMessage,
     ReadyMessage,
@@ -51,6 +51,7 @@ def build_realtime_router(store: SessionStore) -> APIRouter:
         await websocket.accept()
         live = None
         tenant_id = DEFAULT_TENANT_ID
+        pipeline: RealtimePipeline | None = None
         try:
             raw = await websocket.receive_text()
             try:
@@ -89,54 +90,45 @@ def build_realtime_router(store: SessionStore) -> APIRouter:
                     EventReplayMessage(fromSeq=resume_from, events=list(replay)),
                 )
 
+            async def send_locked(message: object) -> None:
+                assert live is not None
+                async with live.write_lock:
+                    await _send(websocket, message)
+
+            pipeline = RealtimePipeline(service=service, session=live, send=send_locked)
+            live.pipeline = pipeline
+
             while True:
                 text = await websocket.receive_text()
                 try:
                     message = parse_client_json(text)
                 except ValidationError:
-                    await _send(websocket, ErrorMessage(code="VALIDATION_FAILED", message="消息格式无效"))
+                    await send_locked(ErrorMessage(code="VALIDATION_FAILED", message="消息格式无效"))
                     continue
                 if isinstance(message, PingMessage):
-                    await _send(websocket, PongMessage(t=message.t))
+                    await send_locked(PongMessage(t=message.t))
                     continue
                 if isinstance(message, CloseMessage):
                     break
                 if isinstance(message, StartMessage):
-                    await _send(
-                        websocket,
+                    await send_locked(
                         StateChangedMessage(status=str(row["status"]), detail={"via": "ws_start_ack"}),
                     )
                     continue
                 if isinstance(message, TextInputMessage):
-                    # 6a: acknowledge only — turn pipeline stays on REST/SSE until 7b.
-                    await _send(
-                        websocket,
-                        StateChangedMessage(
-                            status=str(row["status"]),
-                            detail={"via": "ws_text_input_ack", "chars": len(message.text)},
-                        ),
-                    )
+                    await pipeline.handle_text_input(message)
                     continue
                 if isinstance(message, AudioChunkMessage):
-                    await _send(
-                        websocket,
-                        StateChangedMessage(
-                            status=str(row["status"]),
-                            detail={"via": "ws_audio_chunk_ack", "seq": message.seq},
-                        ),
-                    )
+                    await pipeline.handle_audio_chunk(message)
                     continue
                 if isinstance(message, EndTurnMessage):
-                    await _send(
-                        websocket,
-                        StateChangedMessage(status=str(row["status"]), detail={"via": "ws_end_turn_ack"}),
-                    )
+                    await pipeline.handle_end_turn(message)
                     continue
                 if isinstance(message, InterruptMessage):
-                    await _send(websocket, InterruptedMessage(at=None))
+                    await pipeline.handle_client_interrupt()
                     continue
                 if isinstance(message, AuthMessage):
-                    await _send(websocket, ErrorMessage(code="VALIDATION_FAILED", message="已认证，勿重复 auth"))
+                    await send_locked(ErrorMessage(code="VALIDATION_FAILED", message="已认证，勿重复 auth"))
                     continue
         except WebSocketDisconnect:
             logger.info("ws_disconnect interview=%s", interview_id)
@@ -147,6 +139,8 @@ def build_realtime_router(store: SessionStore) -> APIRouter:
             except Exception:
                 pass
         finally:
+            if pipeline is not None:
+                pipeline.cancel()
             if live is not None:
                 await store.detach(interview_id, live.connection_id)
 

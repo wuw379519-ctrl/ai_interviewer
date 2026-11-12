@@ -1,4 +1,4 @@
-"""Realtime WebSocket gateway skeleton (Task 6a). Full audio pipeline is Task 7b."""
+"""Realtime WebSocket gateway — protocol, session store, pipeline (Task 6b)."""
 from __future__ import annotations
 
 from .protocol import PROTOCOL_VERSION, parse_client_message

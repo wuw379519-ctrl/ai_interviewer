@@ -1,4 +1,4 @@
-"""Bidirectional WS message protocol — single source of truth for Task 6a.
+"""Bidirectional WS message protocol — single source of truth for Task 6b.
 
 Generate TypeScript with:
   PYTHONPATH=apps/api python scripts/export_realtime_protocol_ts.py
@@ -10,6 +10,10 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 
 PROTOCOL_VERSION = "aii-ws-v1"
+
+# D75: keep base64 JSON frames; 1s of PCM16LE @ 16kHz mono = 32000 bytes.
+MAX_AUDIO_CHUNK_PCM_BYTES = 32_000
+MAX_AUDIO_CHUNK_BASE64_CHARS = 44_000
 
 ClientType = Literal[
     "auth", "start", "audio_chunk", "text_input", "end_turn", "interrupt", "ping", "close",
@@ -38,10 +42,15 @@ class StartMessage(Envelope):
 
 
 class AudioChunkMessage(Envelope):
-    """Stub for 7b — accepted and acknowledged, not processed in 6a."""
+    """PCM16LE 16kHz mono fragment as base64 (D75 — no binary frames yet)."""
+
     type: Literal["audio_chunk"] = "audio_chunk"
     seq: int = Field(ge=0)
-    pcm_base64: str | None = Field(default=None, alias="pcmBase64", max_length=1_000_000)
+    pcm_base64: str | None = Field(
+        default=None,
+        alias="pcmBase64",
+        max_length=MAX_AUDIO_CHUNK_BASE64_CHARS,
+    )
     format: Literal["pcm16le_16k"] = "pcm16le_16k"
 
     model_config = {"populate_by_name": True}
@@ -50,6 +59,7 @@ class AudioChunkMessage(Envelope):
 class TextInputMessage(Envelope):
     type: Literal["text_input"] = "text_input"
     text: str = Field(min_length=1, max_length=4000)
+    idempotency_key: str = Field(min_length=8, max_length=200, alias="idempotencyKey")
     expected_question_seq: int | None = Field(default=None, ge=1, alias="expectedQuestionSeq")
 
     model_config = {"populate_by_name": True}
@@ -57,6 +67,9 @@ class TextInputMessage(Envelope):
 
 class EndTurnMessage(Envelope):
     type: Literal["end_turn"] = "end_turn"
+    idempotency_key: str | None = Field(default=None, max_length=200, alias="idempotencyKey")
+
+    model_config = {"populate_by_name": True}
 
 
 class InterruptMessage(Envelope):
@@ -111,7 +124,6 @@ class FinalTranscriptMessage(Envelope):
 
 
 class TtsChunkMessage(Envelope):
-    """Stub for 7b."""
     type: Literal["tts_chunk"] = "tts_chunk"
     seq: int = Field(ge=0)
     audio_base64: str | None = Field(default=None, alias="audioBase64")
@@ -122,6 +134,7 @@ class TtsChunkMessage(Envelope):
 class InterruptedMessage(Envelope):
     type: Literal["interrupted"] = "interrupted"
     at: str | None = None
+    reason: Literal["vad_barge_in", "client", "device_lost"] | None = None
 
 
 class ErrorMessage(Envelope):
@@ -156,8 +169,8 @@ ServerMessage = Annotated[
     Field(discriminator="type"),
 ]
 
-_client_adapter = TypeAdapter(ClientMessage)
-_server_adapter = TypeAdapter(ServerMessage)
+_client_adapter: TypeAdapter[ClientMessage] = TypeAdapter(ClientMessage)  # type: ignore[arg-type,unused-ignore]
+_server_adapter: TypeAdapter[ServerMessage] = TypeAdapter(ServerMessage)  # type: ignore[arg-type,unused-ignore]
 
 
 def parse_client_message(raw: object) -> ClientMessage:
