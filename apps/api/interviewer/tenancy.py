@@ -85,3 +85,8 @@ def ensure_tenant_row(row: dict[str, object] | None, code: str, message: str = "
     owned = row_tenant_id(row)
     if owned is not None and owned != current_tenant():
         raise DomainError(code, message)
+
+
+def bind_tenant_guc_sql() -> str:
+    """Documented GUC name used by PG RLS policies and Database.transaction SET LOCAL."""
+    return "app.tenant_id"

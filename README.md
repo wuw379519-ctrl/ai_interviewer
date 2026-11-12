@@ -38,7 +38,7 @@ $env:PYTHONPATH = 'apps/api'
 - API 契约为 `http://127.0.0.1:8000/api/openapi.json`，可用 `python -m interviewer.cli openapi` 导出本地文件。浏览器直接调用 API 可用对应的 API 客户端，应用未启用依赖外部 CDN 的交互式文档。
 - 网页通过 `POST /api/auth/login` 提交 `username` 与 `password`。本地合成演示会话在显式启用演示模式后可用空 JSON 对象建立。候选人 API 接受邀请返回的 `inviteToken` 作为 Bearer 令牌，回答前仍须明确同意。
 - 已有 PostgreSQL 16 时，填入 `DB_DRIVER=postgres` 和 `DATABASE_URL`，然后用同一迁移命令。已有脱敏快照可通过 `python -m interviewer.cli import-snapshot --file <文件>` 导入空库。
-- 迁移双链：Postgres 为 `apps/api/migrations/postgres/0000`–`0012`；SQLite 为 `0001`–`0006`（含 `interview_events`、`ai_usage`）。空库执行 `python -m interviewer.cli migrate` 一次即可建出与 PG 对齐的业务表、索引与同意/证据/枚举门禁。结构对等由 `apps/api/tests/test_schema_parity.py` 断言（有 `TEST_DATABASE_URL` 时同时跑 PG16；无则该用例 skip）。本机无可用 PG 时，降级验收为 SQLite 空库 migrate + 迁移 SQL 语法/清单检查 + PRAGMA 列与门禁比对；可复现的 disposable PG `initdb`/`pg_ctl` 命令见 [D70](DECISIONS.md#d70-事件溯源-interview_eventstask-3)。
+- 迁移双链：Postgres 为 `apps/api/migrations/postgres/0000`–`0014`；SQLite 为 `0001`–`0007`（含 `tenants` / `users` / `role_bindings`、业务表 `tenant_id`、`interview_events`、`ai_usage`；PG `0014` 启用 RLS）。空库执行 `python -m interviewer.cli migrate` 一次即可建出与 PG 对齐的业务表、索引与同意/证据/枚举门禁。结构对等由 `apps/api/tests/test_schema_parity.py` 断言（有 `TEST_DATABASE_URL` 时同时跑 PG16；无则该用例 skip）。本机无可用 PG 时，降级验收为 SQLite 空库 migrate + 迁移 SQL 语法/清单检查 + PRAGMA 列与门禁比对；可复现的 disposable PG `initdb`/`pg_ctl` 命令见 [D70](DECISIONS.md#d70-事件溯源-interview_eventstask-3) / [D72](DECISIONS.md#d72-多租户与-rls)。
 
 ## 文本与本地音频面试
 
@@ -117,7 +117,8 @@ FastAPI 默认使用 `127.0.0.1:8000`。端口已被占用时可运行 `node scr
   - `admin/` 治理与管理员记录 · `practice/` 本机练习对话（挂载 `PracticeChat`）
 - 业务写入、评分与持久化仍在 `service.py` / `assessment.py` / `governance.py` 等既有模块；事件追加在 `events.py`；AI 出站统一经 `ai/gateway.py`；`modules/*/schemas.py` 仅再导出 `contracts`
 - `interview_events`：append-only 事件表，唯一索引 `(interview_id, seq)`；应用层 `MAX(seq)+1` 单调递增，DB 唯一约束兜底
-- `ai_usage`：AI 计量表（`tenant` 可空待 Task 4；`kind` = `llm_tokens` / `asr_seconds` / `tts_chars`）；fake 模式也会写入估算量
+- `ai_usage`：AI 计量表（`tenant` 对齐 `tenants.id`；`kind` = `llm_tokens` / `asr_seconds` / `tts_chars`）；fake 模式也会写入估算量
+- 多租户：`tenants` + `users` + `role_bindings`；业务表带可空 `tenant_id`（迁移回填 default）。租户由服务端鉴权解析（`get_current_tenant` / `Actor.tenant_id`），**不**由客户端传入。应用层查询强制按当前租户过滤，跨租户 → 404。Postgres 另以 RLS（`tenant_id = current_setting('app.tenant_id')`）双保险；`Database.transaction`（`apps/api/interviewer/database.py`）在每笔事务开始 `set_config('app.tenant_id', …, true)`（SET LOCAL）。生产 `DATABASE_URL` 须为非超级用户 / 非 `BYPASSRLS` 角色，否则 RLS 不生效。SQLite 无 RLS，依赖应用层过滤。详见 [D72](DECISIONS.md#d72-多租户与-rls)。
 
 ### AI Gateway（配置）
 

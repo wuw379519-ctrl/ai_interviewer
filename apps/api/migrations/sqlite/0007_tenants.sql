@@ -1,4 +1,4 @@
-﻿CREATE TABLE IF NOT EXISTS tenants (
+CREATE TABLE IF NOT EXISTS tenants (
     id CHAR(36) PRIMARY KEY NOT NULL,
     name TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'active',

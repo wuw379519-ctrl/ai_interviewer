@@ -288,6 +288,12 @@ class Database:
         with self.lock, self.engine.begin() as connection:
             if self.postgres:
                 connection.execute(text("SELECT pg_advisory_xact_lock(81720425)"))
+                # RLS policies read app.tenant_id; SET LOCAL (is_local=true) for this transaction only.
+                # Pool checkout reuse is safe: LOCAL ends with the transaction / connection return.
+                connection.execute(
+                    text("SELECT set_config('app.tenant_id', :tid, true)"),
+                    {"tid": current_tenant()},
+                )
             yield connection
 
     @contextmanager
@@ -320,7 +326,7 @@ class Database:
             with self.engine.begin() as connection:
                 connection.exec_driver_sql("CREATE TABLE IF NOT EXISTS __python_migrations (id text PRIMARY KEY, checksum text NOT NULL, applied_at text NOT NULL DEFAULT CURRENT_TIMESTAMP)")
             for file in sorted((ROOT / "apps/api/migrations/sqlite").glob("*.sql")):
-                content = file.read_bytes().decode("utf-8")
+                content = file.read_bytes().decode("utf-8-sig")
                 checksum = hashlib.sha256(content.encode()).hexdigest()
                 with self.engine.begin() as connection:
                     previous = connection.execute(text("SELECT checksum FROM __python_migrations WHERE id=:id"), {"id": file.name}).scalar()
@@ -354,7 +360,7 @@ class Database:
         with self.engine.begin() as connection:
             connection.exec_driver_sql("CREATE TABLE IF NOT EXISTS __migrations (id text PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())")
         for file in sorted((ROOT / "apps/api/migrations/postgres").glob("*.sql")):
-            content = file.read_bytes().decode("utf-8")
+            content = file.read_bytes().decode("utf-8-sig")
             checksum = hashlib.sha256(content.encode()).hexdigest()
             with self.engine.begin() as connection:
                 previous = connection.execute(text("SELECT checksum FROM __migrations WHERE id=:id"), {"id": file.name}).scalar()

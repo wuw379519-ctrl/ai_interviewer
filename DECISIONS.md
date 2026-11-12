@@ -864,3 +864,23 @@ Docker 等价思路：起一次性 Postgres 容器，设 `TEST_DATABASE_URL`/`DA
 - **明确例外**：练习面绕过 Gateway；当前未违反「禁止 import openai 等供应商 SDK 包」的业务门禁口径，但 `httpx` 出网留在练习实现内。是否纳入 Gateway **待定**。
 
 **无新依赖**；未新增只读 API。回退：停部署 `0012`/`0006`，业务改回直调 Provider（不推荐）。
+
+## D72 多租户与 RLS（Task 4）
+
+**状态**：本轮实施（分 3 个可回退 commit）
+
+**设计依据**：`docs/ai-interviewer-architecture.md` §一（多租户隔离在底层）与 §四（`tenants` / `users` / `role_bindings` 数据模型）。目录中的 `deps.py` / `tenants/` 模块在本树落地为 `tenancy.py` + 现有 `auth.Actor`，不另开 HTTP 租户 API。
+
+**Schema（Commit 1）**：PG `0013_tenants.sql` / SQLite `0007_tenants.sql` — `tenants`、`users`、`role_bindings`；业务表追加可空 `tenant_id`；迁移内创建 default tenant（固定 id `00000000-0000-4000-8000-000000000001`）并回填现有行；种子 admin/recruiter 用户与 role_bindings。`ai_usage.tenant` 类型与 `tenants.id` 对齐（TEXT/String(36)）。`get_current_tenant` / `get_current_user` 从鉴权 Actor 解析；现有 admin/recruiter 归 default tenant。
+
+**应用层过滤（Commit 2）**：请求中间件绑定 `ContextVar` 租户；`Service.required` 与 jobs/candidates/interviews/events/scores/reports/data_policies/audit_logs 等列表/治理路径按 `current_tenant()` 过滤；跨租户同一套 NOT_FOUND → **404**（不泄漏存在性）。admin 属 default，只能看见 default 数据。无跨租户超级角色。`data_policies` 仍为 default 上的 `id='workspace'` 单例（CHECK 未放开）；非 default 租户若无自有策略行则 `NOT_READY`——完整每租户策略表为后续项。
+
+**PG RLS（Commit 3）**：`0014_tenant_rls.sql` 对上述业务表 + users/role_bindings/ai_usage `ENABLE`+`FORCE ROW LEVEL SECURITY`，策略 `tenant_id`（`ai_usage` 为 `tenant`）`= current_setting('app.tenant_id', true)`。连接池安全点：`database.py` `Database.transaction` 在 advisory lock 之后对每笔 PG 事务 `SELECT set_config('app.tenant_id', :tid, true)`（等价 SET LOCAL）。**超级用户 / BYPASSRLS 角色会绕过 RLS**（即便 FORCE）；生产 `DATABASE_URL` 必须使用普通业务角色。`test_tenant_rls` 通过 `SET LOCAL ROLE` 到 `NOSUPERUSER NOBYPASSRLS` 角色验证。SQLite 无 RLS。
+
+**测试**：`test_tenancy_schema` / `test_tenancy_isolation`（SQLite）；`test_tenant_rls` 需 `TEST_DATABASE_URL`，无则 skip。空库 migrate：SQLite 本地必跑；PG 按 D70 disposable 流程（本机验证用 pgsql 18.x 亦可）。
+
+**API 契约**：请求/响应不暴露 tenant；客户端不可传 tenant。OpenAPI 路径集合不变（导出 `docs/openapi.json` 仅元数据刷新）。
+
+**已知限制**：SQLite 仅应用层隔离；熔断与租户 ContextVar 均为进程内；`data_policies` 单例尚未 per-tenant 化；多 worker 下 ContextVar 不跨进程。
+
+**无新依赖**。回退：按 commit 逆序 revert；已应用的 `0013`/`0014`/`0007` 行保留。

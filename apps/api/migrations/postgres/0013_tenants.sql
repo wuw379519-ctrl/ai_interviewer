@@ -1,4 +1,4 @@
-﻿CREATE TABLE tenants (
+CREATE TABLE tenants (
     id TEXT PRIMARY KEY NOT NULL,
     name TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'active',
