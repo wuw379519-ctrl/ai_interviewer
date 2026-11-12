@@ -1001,3 +1001,33 @@ Docker 等价思路：起一次性 Postgres 容器，设 `TEST_DATABASE_URL`/`DA
 
 **明确不做**：唇动/人脸、声纹、无关 PII；风险项自动录用/淘汰；用 riskItems 调分或改 recommendation。
 
+## D78 Task 8a：运维基础设施（compose / Celery / sticky WS）
+
+**状态**：已落地（Task 8a；8b 收尾文档另开）
+
+**设计源**：`docs/ai-interviewer-architecture.md` §3.2（会话粘性）、§3.3（AI 网关降级）、§七（Celery+Redis）、§八 M6；实现以本决策为准。`infra/docker-compose.yml` 对齐架构树，本轮不含 MinIO。
+
+**Compose**：`postgres` + `redis` + `api` + `worker`（worker 兼 beat）。API healthcheck = `GET /api/ready`。生产 `DATABASE_URL` 必须 `NOSUPERUSER NOBYPASSRLS`（见 `infra/postgres/init-app-role.sql` / Task 4）；compose 开发可用超级用户迁移，上线前切 `aii_app`。
+
+**Compose 实起待验证（关闭缺口）**：交付机无 Docker daemon；本轮以 `python infra/compose.validate.py` 做结构门禁，并增加 `.github/workflows/compose-smoke.yml`（有 Docker 的 CI runner 上 `compose up` + curl `/api/ready`）。**Task 8b 全量验收必须包含 compose 实起通过证据**（本地或 CI 日志）。
+
+离线校验**已覆盖**：服务名；`depends_on` + `service_healthy` 链（api←pg/redis，worker←api）；healthcheck 字符串为 `/api/ready`；`env_file: ../.env`；volume `aii_pg_data`；`init-app-role.sql` 挂到 `initdb.d/01-…`；角色 SQL 含 NOSUPERUSER/NOBYPASSRLS；worker `--beat`；nginx `ip_hash`；compose YAML 无明文 sk- 类密钥。
+
+离线校验**未覆盖**：镜像拉取；healthcheck 进程真实可执行/退出码；对活 PG 的 migrate+ready；redis 连通；Celery broker 握手与 beat 触发；named volume 创建；initdb 脚本运行时顺序；CPU/内存资源；worker 消费任务的运行日志。
+
+**Celery 任务**：
+- `generate_report_task`：异步报告；**HTTP `POST /score` 仍同步**（默认降级/本地路径）。迁移策略：ops 或后续开关可 `delay()`，客户端轮询报告。
+- `run_retention_cleanup`：复用 `governance.retention_cleanup_batch`；**默认 dry-run**；`CELERY_CLEANUP_EXECUTE=true` 才删除。Beat：**每小时**（`crontab(minute=17)` UTC）。覆盖到期 interviews（显式删 `proctor_logs` / `interview_events`）与 candidates/caches/audit 最小化。`data_policies` 非 default 租户 → 后续任务。
+- **无新 DB 迁移**（复用既有 PG/SQLite 链）。
+
+**WS 多 worker：选型 A（sticky）**：`infra/nginx/nginx.conf` 用 `ip_hash`；compose 内 edge 注释可选。理由：8a 控制范围，避免本轮改写进程内 `SessionStore`。**后续 B**：Redis 外置 SessionStore（架构 §3.2）。
+
+**Sticky 风险确认（A）**：
+- **(a) 生产 sticky 方案**：**待定**。仓库提供 nginx `ip_hash` 样例；可选后续 K8s `sessionAffinity: ClientIP` 或云 LB cookie/源 IP 粘性。上线前必须在部署层选定并验收，否则多副本不可开。
+- **(b) sticky 失效 UX**：进程内 `SessionStore`/pipeline 状态丢失；候选人端以 `resumeFromSeq` + `event_replay`（`interview_events`）对齐已落库事件，**从最近已提交事件继续**，不整场重开。进行中未落库的 turn 可能丢失（D74 废弃语义）；客户端应提示「连接已恢复，请继续作答」，而非「请从头面试」。
+- **(c) 双连接落到不同 worker**：进程内顶替（close `4000`）**无法跨进程**，可能短暂双活。兜底：`interview_events (interview_id, seq)` 与 `turns (interview_id, seq)` **唯一约束**拒绝撞 seq；`next_seq` 为 MAX+1，竞态下后者插入失败，该 turn 报错/可重试，不静默双写。尚无 interview 级 DB 顾问锁；彻底消除双活需选型 B。产品上应避免多设备同时开同一场。
+
+**故障演练**：`docs/ops/failover-drill.md` + `test_failover_drill.py`。
+
+**依赖**：`celery[redis]==5.4.0`、`redis==5.3.1`（及 kombu/amqp/billiard 等）— 报告/清理队列与 Redis broker；测试可用 `CELERY_TASK_ALWAYS_EAGER`。
+

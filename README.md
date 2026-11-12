@@ -122,6 +122,19 @@ FastAPI 默认使用 `127.0.0.1:8000`。端口已被占用时可运行 `node scr
 - 多租户：`tenants` + `users` + `role_bindings`；业务表带可空 `tenant_id`（迁移回填 default）。租户由服务端鉴权解析（`get_current_tenant` / `Actor.tenant_id`），**不**由客户端传入。应用层查询强制按当前租户过滤，跨租户 → 404。Postgres 另以 RLS（`tenant_id = current_setting('app.tenant_id')`）双保险；`Database.transaction`（`apps/api/interviewer/database.py`）在每笔事务开始 `set_config('app.tenant_id', …, true)`（SET LOCAL）。生产角色红线见上文「部署红线（RLS）」。SQLite 无 RLS，依赖应用层过滤。详见 [D72](DECISIONS.md#d72-多租户与-rls)。
 - 实时网关（Task 6b）：`WS /ws/interview/{session_id}`。`auth` → 心跳 → `text_input`/`audio_chunk`+`end_turn` → ASR（Gateway）→ `service.turn`（幂等键写入 `idempotency_keys`，scope=`WS /turns`）→ `question` + `tts_chunk`。能量 VAD（`onset_ms=80` / `cooldown_ms=300`）打断：`interrupted(reason=vad_barge_in)`。重连顶替 close `4000`，`resumeFromSeq` 重放。推荐客户端音频分片 **100–200ms**（协议上限 1s）。**多 worker**：需 sticky session 或 Redis 外置 `SessionStore`（见 D76）。延迟边界见 [docs/acceptance/task6b-realtime-latency.md](docs/acceptance/task6b-realtime-latency.md)。SSE `/turns` 等仍为降级路径。决策 [D73](DECISIONS.md#d73-task-6a-gateway-protocol-保持双轨-casync-表面--sync-实现)/[D74](DECISIONS.md#d74-task-6a-每面试仅一个活动写-ws重连顶替旧连接)/[D75](DECISIONS.md#d75-task-6b-协议字段补齐text_input--audio_chunk)/[D76](DECISIONS.md#d76-task-6b实时-pipeline--vad--打断)。WS **不**进入 OpenAPI。
 - 防作弊信号（Task 7）：候选人端经 WS `proctor_signal` 上报切屏/失焦/答题延迟；服务端在**每题作答缓冲**上聚合派生静音比例与音量突变（非每 chunk），写入 `proctor_logs`（租户隔离 + PG RLS）。规则打分器产出报告 `riskItems`（`hint`/`review`，`affectsScore=false`），**不**进入评分证据链、**不**自动录用/淘汰。报告页「过程信号提示」仅供人工复核。详见 [D77](DECISIONS.md#d77-task-7-防作弊信号与-riskitems)。
+- 运维栈（Task 8a）：`infra/docker-compose.yml` 起 `postgres` + `redis` + `api` + `worker`（兼 beat）。API **healthcheck 走 `/api/ready`**。Celery：`generate_report_task`（HTTP `/score` 仍同步为默认）；`run_retention_cleanup` **每小时**（UTC `minute=17`），默认 dry-run，`CELERY_CLEANUP_EXECUTE=true` 才删；清理覆盖到期面试及 `proctor_logs`。WS 多副本用 sticky（`infra/nginx/nginx.conf` `ip_hash`；**生产 sticky 方案待定**）；Redis SessionStore 为后续。故障演练见 [docs/ops/failover-drill.md](docs/ops/failover-drill.md)。决策 [D78](DECISIONS.md#d78-task-8a运维基础设施compose--celery--sticky-ws)。
+
+```powershell
+# 结构门禁（无 Docker 也可）
+python infra/compose.validate.py
+# 在仓库根实起；勿提交真实 .env
+docker compose -f infra/docker-compose.yml up --build -d
+docker compose -f infra/docker-compose.yml ps
+# 期望 api healthy（ready）；worker 运行中
+```
+
+**已知限制（Task 8a）**：**compose 实起待验证**（交付环境曾无 Docker daemon；以 `compose.validate.py` + CI workflow `compose-smoke.yml` 补证据）。**Task 8b 全量验收必须包含 compose 实起通过日志**。Sticky 失效时靠 `event_replay` 续场（可能丢未落库 turn）；跨 worker 双活靠 DB seq 唯一约束兜底，非进程内顶替。
+
 
 ### AI Gateway（配置）
 

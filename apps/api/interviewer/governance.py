@@ -67,6 +67,11 @@ def erase_interviews(service: Service, connection: StorageSession, identities: l
         .values(response_status=410, response_body=ERASED, status='completed', updated_at=db.now()))
     db.command(connection, db.scores.delete().where(and_(db.scores.c.interview_id.in_(identities), db.scores.c.tenant_id == tenant)))
     db.command(connection, db.evidence.delete().where(and_(db.evidence.c.interview_id.in_(identities), db.evidence.c.tenant_id == tenant)))
+    # Explicit (also CASCADE): Task 7 proctor_logs + events must not outlive the interview (D77/D78).
+    db.command(connection, db.proctor_logs.delete().where(and_(
+        db.proctor_logs.c.interview_id.in_(identities), db.proctor_logs.c.tenant_id == tenant)))
+    db.command(connection, db.interview_events.delete().where(and_(
+        db.interview_events.c.interview_id.in_(identities), db.interview_events.c.tenant_id == tenant)))
     db.command(connection, db.interviews.delete().where(and_(db.interviews.c.id.in_(identities), db.interviews.c.tenant_id == tenant)))
     service.speech_cache = {key: value for key, value in service.speech_cache.items() if value[3] not in identities}
     return len(found)
@@ -171,6 +176,76 @@ def run_cleanup(service: Service, connection: StorageSession, body: CleanupInput
     result: Object = {"candidatesErased": len(candidates), "interviewsErased": interviews, "cachesRemoved": len(cache_ids), "auditEntriesMinimized": len(audit_ids)}
     service.audit(connection, "retention.executed", "workspace", {**result, "reasonDigest": hashlib.sha256(body.reason.encode()).hexdigest()}, actor)
     return Result(result)
+
+
+def retention_cleanup_batch(
+    service: Service,
+    connection: StorageSession,
+    actor: Actor,
+    *,
+    dry_run: bool = True,
+    cutoff: object | None = None,
+    reason: str = "celery retention cleanup",
+) -> Object:
+    """Worker/ops cleanup with dry-run. Covers interviews (+ CASCADE/explicit proctor_logs) via erase paths."""
+    selection, has_more = cleanup_selection(service, connection, cutoff)
+    interview_ids = strings(selection["interviewIds"])
+    candidate_ids = strings(selection["candidateIds"])
+    tenant = current_tenant()
+    proctor_count = 0
+    if interview_ids:
+        proctor_count = len(db.rows(
+            connection,
+            select(db.proctor_logs.c.id).where(and_(
+                db.proctor_logs.c.interview_id.in_(interview_ids),
+                db.proctor_logs.c.tenant_id == tenant,
+            )),
+        ))
+    preview: Object = {
+        "dryRun": dry_run,
+        "hasMore": has_more,
+        "cutoffAt": selection["cutoffAt"],
+        "candidateIds": candidate_ids,
+        "interviewIds": interview_ids,
+        "cacheIds": strings(selection["cacheIds"]),
+        "auditIds": strings(selection["auditIds"]),
+        "proctorLogsPending": proctor_count,
+        "counts": {
+            "candidates": len(candidate_ids),
+            "interviews": len(interview_ids),
+            "caches": len(strings(selection["cacheIds"])),
+            "auditEntries": len(strings(selection["auditIds"])),
+            "proctorLogs": proctor_count,
+        },
+    }
+    if dry_run:
+        return preview
+    for identity in candidate_ids:
+        erase_candidate(service, connection, identity, reason, actor)
+    interviews_erased = erase_interviews(service, connection, interview_ids)
+    cache_ids, audit_ids = strings(selection["cacheIds"]), strings(selection["auditIds"])
+    db.command(connection, db.idempotency_keys.delete().where(db.idempotency_keys.c.id.in_(cache_ids)))
+    for identity in audit_ids:
+        row = db.one(connection, db.audit_logs, identity)
+        if row:
+            db.update(connection, db.audit_logs, identity, metadata=None, ip_hash=None)
+    result: Object = {
+        **preview,
+        "dryRun": False,
+        "candidatesErased": len(candidate_ids),
+        "interviewsErased": interviews_erased,
+        "cachesRemoved": len(cache_ids),
+        "auditEntriesMinimized": len(audit_ids),
+        "proctorLogsRemoved": proctor_count,
+    }
+    service.audit(
+        connection,
+        "retention.executed",
+        "workspace",
+        {**result, "reasonDigest": hashlib.sha256(reason.encode()).hexdigest(), "via": "celery"},
+        actor,
+    )
+    return result
 
 
 def candidates_page(service: Service, connection: StorageSession, before: str | None) -> Object:

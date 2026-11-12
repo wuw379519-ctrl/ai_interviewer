@@ -1,0 +1,56 @@
+# Task 8a / 8b: real docker compose up evidence (GitHub-hosted runners have Docker).
+name: Compose smoke
+
+on:
+  push:
+    paths:
+      - "infra/**"
+      - "apps/api/Dockerfile"
+      - "apps/api/requirements.txt"
+      - "apps/api/requirements.lock"
+      - ".github/workflows/compose-smoke.yml"
+  pull_request:
+    paths:
+      - "infra/**"
+      - "apps/api/Dockerfile"
+      - "apps/api/requirements.txt"
+      - "apps/api/requirements.lock"
+      - ".github/workflows/compose-smoke.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compose-up:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Offline compose structure gate
+        run: python infra/compose.validate.py
+      - name: Build and start stack
+        run: docker compose -f infra/docker-compose.yml up --build -d
+      - name: Wait for api /api/ready
+        run: |
+          set -e
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8000/api/ready; then
+              echo
+              echo "api_ready_ok attempt=$i"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "api_ready_timeout"
+          docker compose -f infra/docker-compose.yml ps
+          docker compose -f infra/docker-compose.yml logs api --tail=80
+          exit 1
+      - name: Worker process present
+        run: |
+          docker compose -f infra/docker-compose.yml ps
+          docker compose -f infra/docker-compose.yml logs worker --tail=40
+          docker compose -f infra/docker-compose.yml logs worker --tail=40 | grep -E "celery|ready|beat" 
+      - name: Tear down
+        if: always()
+        run: docker compose -f infra/docker-compose.yml down -v

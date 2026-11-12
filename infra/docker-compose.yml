@@ -1,0 +1,132 @@
+# Local / staging stack: postgres + redis + api + celery worker(+beat).
+# Production DATABASE_URL must use a NOSUPERUSER NOBYPASSRLS role (Task 4). See init-app-role.sql.
+# Do not put real secrets in this file — copy ../.env.example → .env and inject via env_file.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres_dev_only
+      POSTGRES_DB: aii
+    ports:
+      - "5432:5432"
+    volumes:
+      - aii_pg_data:/var/lib/postgresql/data
+      - ./postgres/init-app-role.sql:/docker-entrypoint-initdb.d/01-app-role.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d aii"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - path: ../.env
+        required: false
+    environment:
+      APP_ENV: development
+      DB_DRIVER: postgres
+      # Dev compose uses superuser for migrate convenience; production MUST switch to aii_app (NOBYPASSRLS).
+      DATABASE_URL: postgresql+psycopg://postgres:postgres_dev_only@postgres:5432/aii
+      REDIS_URL: redis://redis:6379/0
+      LLM_PROVIDER: fake
+      DEMO_MODE: "true"
+      AUTH_SECRET: compose-dev-secret-please-override-32chars
+      CELERY_TASK_ALWAYS_EAGER: "false"
+      FEISHU_APP_ID: ""
+      FEISHU_APP_SECRET: ""
+      FEISHU_VERIFICATION_TOKEN: ""
+      FEISHU_ENCRYPT_KEY: ""
+    ports:
+      - "8000:8000"
+    # Ready (not /api/health): surfaces POSTGRES_RLS_ROLE_BYPASS in non-prod.
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/ready', timeout=2)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    command:
+      [
+        "sh",
+        "-c",
+        "python -m interviewer.cli migrate && python -m uvicorn interviewer.main:app --host 0.0.0.0 --port 8000 --no-access-log",
+      ]
+
+  worker:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    env_file:
+      - path: ../.env
+        required: false
+    environment:
+      APP_ENV: development
+      DB_DRIVER: postgres
+      DATABASE_URL: postgresql+psycopg://postgres:postgres_dev_only@postgres:5432/aii
+      REDIS_URL: redis://redis:6379/0
+      LLM_PROVIDER: fake
+      DEMO_MODE: "true"
+      AUTH_SECRET: compose-dev-secret-please-override-32chars
+      # Beat defaults to dry-run unless CELERY_CLEANUP_EXECUTE=true
+      CELERY_CLEANUP_EXECUTE: "false"
+      FEISHU_APP_ID: ""
+      FEISHU_APP_SECRET: ""
+    # Worker + beat in one process for local ops; split in production if needed.
+    command:
+      [
+        "python",
+        "-m",
+        "celery",
+        "-A",
+        "interviewer.workers.celery_app.celery_app",
+        "worker",
+        "--beat",
+        "--loglevel=INFO",
+        "-Q",
+        "celery",
+      ]
+
+  # Optional sticky reverse proxy for multi-api demos (option A). Not required for single api.
+  # edge:
+  #   image: nginx:1.27-alpine
+  #   volumes:
+  #     - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+  #   ports:
+  #     - "8080:8080"
+  #   depends_on:
+  #     - api
+
+volumes:
+  aii_pg_data:
