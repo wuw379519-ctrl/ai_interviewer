@@ -920,3 +920,20 @@ Docker 等价思路：起一次性 Postgres 容器，设 `TEST_DATABASE_URL`/`DA
 **理由**：保住事件单调序与断线恢复语义；重连是主路径，顶替优于 409 拒绝（否则刷新页无法恢复）。
 
 **回退**：改为拒绝第二连接（409）只需改 `SessionStore.attach`，协议消息不变。
+
+### 顶替语义 + 客户端重连退避（6a 收尾）
+
+- **服务端**：`SessionStore.attach` 在登记新连接后，对旧 socket **立即** `websocket.close(code=4000, reason="superseded")`，**不**先发业务层 `superseded` 消息（6a 无此帧）。
+- **进行中的 turn**：6a 骨架不在 WS 上跑 turn；7b 若旧连接正在 pipeline，顶替时旧连接任务视为 **废弃**（不保证完成写库），新连接以 `resumeFromSeq` + `interview_events` 重放对齐。幂等键/turn 关联见 D75。
+- **客户端**：收到 close `4000` 应视为被顶替。重连使用 **指数退避**（建议首延迟 ≥1.5s，上限约 8s，可加抖动），且 **同一 tab 被 4000 后不应与另一存活端抢连**（多设备同时开面试页会互踢——产品上应避免；退避用于降低循环频率，不能从协议层消灭双端争用）。普通断线（非 4000）可用较短固定延迟重连。
+- **观测字段**：6a `LiveSession` 仅有 `created_at` / `connection_id`，**无**顶替计数或 last-active 区分「真重连 vs 多设备」。7b 若需防互踢，再加 `replaceCount` / `lastActiveAt` 或设备指纹（另开 D）。
+
+## D75 Task 7b 协议前置：text_input / audio_chunk 字段缺口
+
+**状态**：记录（6a 收尾；7b 开工前必读）
+
+**text_input（现状）**：`text` + 可选 `expectedQuestionSeq`。**无** `turnId` / `idempotencyKey`。REST `/turns` 依赖 HTTP `Idempotency-Key`；WS 路径 7b 必须补协议字段（建议 `idempotencyKey` 必填或与 `clientMsgId` 等价），否则重连重放会双写 turn。
+
+**audio_chunk（现状）**：JSON 文本帧 + 可选 `pcmBase64`，`format` 固定字面量 `pcm16le_16k`，另有分片 `seq`。**未**定义二进制 WebSocket 帧或 multipart。7b 若走二进制 PCM，需新增帧类型或 `content-type` 约定并重导出 TS；若继续 base64 JSON，需补最大分片字节、是否允许缺省 `pcmBase64` 的空心跳片等。
+
+**Gateway**：调用形态仍遵 D73（C）。本条只约束协议字段，不改 6a 运行时行为。

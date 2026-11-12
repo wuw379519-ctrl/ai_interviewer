@@ -32,6 +32,8 @@ export class InterviewWsClient {
   private readonly maxQueue: number;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private intentionallyClosed = false;
+  /** Consecutive close-4000 (superseded) reconnects; reset on other closes (D74). */
+  private supersedeAttempts = 0;
 
   constructor(private readonly options: InterviewWsClientOptions) {
     this.resumeFromSeq = options.resumeFromSeq ?? 0;
@@ -73,12 +75,20 @@ export class InterviewWsClient {
         /* ignore malformed */
       }
     });
-    socket.addEventListener("close", () => {
+    socket.addEventListener("close", (event) => {
       this.stopHeartbeat();
       this.socket = null;
       if (!this.intentionallyClosed) {
         this.setStatus("reconnecting");
-        window.setTimeout(() => this.connect(), 800);
+        // D74: 4000 = superseded — exponential backoff dampens multi-tab kick loops.
+        let delayMs = 800;
+        if (event.code === 4000) {
+          this.supersedeAttempts += 1;
+          delayMs = Math.min(8000, Math.round(1500 * 2 ** (this.supersedeAttempts - 1)));
+        } else {
+          this.supersedeAttempts = 0;
+        }
+        window.setTimeout(() => this.connect(), delayMs);
       } else {
         this.setStatus("closed");
       }
