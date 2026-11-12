@@ -72,7 +72,7 @@ def build_router() -> APIRouter:
             meta = {key: value for key, value in result.payload.items() if key != "text"}
             meta["replayed"] = result.replayed
             yield "event: meta\ndata: " + json.dumps(meta, ensure_ascii=False, separators=(",", ":")) + "\n\n"
-            for fragment in service.provider.stream(str(result.payload["text"])):
+            for fragment in service.gateway.stream(str(result.payload["text"])):
                 yield "event: delta\ndata: " + json.dumps({"text": fragment}, ensure_ascii=False, separators=(",", ":")) + "\n\n"
                 await asyncio.sleep(0.008)
             yield "event: done\ndata: " + json.dumps(json_object(result.payload), ensure_ascii=False, separators=(",", ":")) + "\n\n"
@@ -94,7 +94,9 @@ def build_router() -> APIRouter:
         identity = str(interview_id)
         text = await run_in_threadpool(tts.current_question, service, request, identity, questionSeq, turnSeq)
         service.auth.limit(f"tts:{identity}", 20)
-        audio = await service.tts.synthesize(text)
+        audio = await service.gateway.synthesize(text)
+        with service.database.unit_of_work() as connection:
+            service.gateway.meter(connection, "tts_chars", float(len(text)), provider=service.gateway.tts.name)
         await run_in_threadpool(tts.current_question, service, request, identity, questionSeq, turnSeq, len(audio))
         return Response(audio, media_type="audio/mpeg", headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
 

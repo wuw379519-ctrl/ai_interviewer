@@ -10,6 +10,7 @@ from sqlalchemy import inspect, text
 
 # Tables required after the full migration chain on either driver.
 BUSINESS_TABLES: frozenset[str] = frozenset({
+    "ai_usage",
     "audit_logs",
     "candidates",
     "competencies",
@@ -113,6 +114,10 @@ REQUIRED_COLUMNS: Mapping[str, Mapping[str, bool]] = {
         "id": False, "interview_id": False, "seq": False, "event_type": False, "payload": False,
         "ts": False, "created_at": False, "updated_at": False,
     },
+    "ai_usage": {
+        "id": False, "tenant": True, "provider": False, "kind": False, "amount": False,
+        "ts": False, "created_at": False, "updated_at": False,
+    },
 }
 
 # Index names expected on both drivers after full migrate (unique table constraints may substitute).
@@ -136,6 +141,7 @@ REQUIRED_INDEXES: Mapping[str, frozenset[str]] = {
     "scores": frozenset({"scores_interview_idx", "scores_evidence_idx"}),
     "turns": frozenset({"turns_interview_idx", "turns_question_idx"}),
     "interview_events": frozenset({"interview_events_interview_idx"}),
+    "ai_usage": frozenset({"ai_usage_provider_ts_idx", "ai_usage_tenant_ts_idx"}),
 }
 
 # Safety gates that must exist (trigger name contains / equals these tokens).

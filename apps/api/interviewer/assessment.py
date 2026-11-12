@@ -115,7 +115,10 @@ def generate_report(service: Service, connection: StorageSession, interview_id: 
     context: Object = {"jobSummary": assessment_text(str(service.required(connection, db.jobs, str(interview["job_id"]), "JOB_NOT_FOUND")["jd_text"]))[:1800],
                        "competencies": dimensions, "questions": [{"id": str(row["id"]), "competencyId": str(row["competency_id"]), "seq": as_int(row, "seq"), "prompt": str(row["prompt"])} for row in questions], "turns": cleaned_turns}
     fixture = fixture_assessment(context)
-    samples = [service.provider.structured("assessment", scoring_prompt(context), AssessmentSample, fixture.payload()) for _ in range(2)]
+    samples = [
+        service.gateway.structured("assessment", scoring_prompt(context), AssessmentSample, fixture.payload())
+        for _ in range(2)
+    ]
     # Nothing is erased until both validated generations have succeeded.
     revision = as_int(existing[0], "revision") + 1 if existing else 1
     db.command(connection, db.scores.delete().where(db.scores.c.interview_id == interview_id))
@@ -168,7 +171,7 @@ def generate_report(service: Service, connection: StorageSession, interview_id: 
         score = db.insert(connection, db.scores, {"interview_id": interview_id, "competency_id": dimension["id"],
                          "value": dimension_value, "numeric_value": int(dimension_value) if dimension_value != "insufficient_evidence" else None,
                          "evidence_id": evidence_ids[0] if evidence_ids else None, "attempt": 1, "needs_review": any(bool(row["needsReview"]) for row in matches),
-                         "rationale": "由已验证证据的逐题分等权聚合，无证据不当0分。", "model": service.provider.model, "prompt_version": "python-assessment-v1"})
+                         "rationale": "由已验证证据的逐题分等权聚合，无证据不当0分。", "model": service.gateway.model, "prompt_version": "python-assessment-v1"})
         dimension_results.append({"competencyId": dimension["id"], "competencyName": dimension["name"], "weight": dimension["weight"], "score": dimension_value,
                                   "scoreId": str(score["id"]), "rationale": str(score["rationale"]), "needsReview": bool(score["needs_review"]),
                                   "sampleValues": [str(math.floor(sum(int(cast(list[str], row["sampleValues"])[index]) for row in numeric_matches) / len(numeric_matches) + 0.5)) if numeric_matches else "insufficient_evidence" for index in range(2)], "evidenceIds": evidence_ids})
@@ -177,10 +180,10 @@ def generate_report(service: Service, connection: StorageSession, interview_id: 
     usages = db.rows(connection, select(db.audit_logs).where(and_(db.audit_logs.c.interview_id == interview_id, db.audit_logs.c.action == "llm.usage")))
     prompt_tokens = sum(int(str(object_value(row["metadata"]).get("promptTokens", 0))) for row in usages)
     completion_tokens = sum(int(str(object_value(row["metadata"]).get("completionTokens", 0))) for row in usages)
-    metadata: Object = {"provider": service.provider.name, "model": service.provider.model, **service.provider.usage(prompt_tokens, completion_tokens),
+    metadata: Object = {"provider": service.gateway.name, "model": service.gateway.model, **service.gateway.usage(prompt_tokens, completion_tokens),
                         "generatedAt": db.iso(db.now()), "transcriptRedacted": True, "samplingRuns": 2,
-                        "costBasis": "fixture_free" if service.provider.name == "fake" else "configured_rates" if service.settings.input_price is not None else "unpriced_internal",
-                        "usageEstimated": service.provider.name == "fake", "transcriptHash": json_hash(cleaned_turns)}
+                        "costBasis": "fixture_free" if service.gateway.name == "fake" else "configured_rates" if service.settings.input_price is not None else "unpriced_internal",
+                        "usageEstimated": service.gateway.name == "fake", "transcriptHash": json_hash(cleaned_turns)}
     db.insert(connection, db.reports, {"interview_id": interview_id, "overall_summary": "已按岗位维度校验证据。", "dimension_scores": dimension_results,
               "question_scores": assessments, "revision": revision, "highlights": [], "risks": [], "next_questions": [], "recommendation": "mixed",
               "recommendation_reason": "供人工复核", "metadata": metadata, "retained_until": interview["retained_until"], "prompt_version": "python-assessment-v1"})

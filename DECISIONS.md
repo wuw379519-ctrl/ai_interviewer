@@ -818,3 +818,49 @@ Docker 等价思路：起一次性 Postgres 容器，设 `TEST_DATABASE_URL`/`DA
 **测试门禁**：`test_schema_parity` 中 PG 对照用例依赖 `TEST_DATABASE_URL`；未设置则 **skip**（SQLite 空库 migrate + 清单断言仍跑）。
 
 **无新依赖**。回退：停止部署 `0011`/`0005` 并去掉 `events.append_event` 调用与 admin 路由即可；已应用的迁移行保留。
+
+## D71 AI Gateway：路由 / 熔断 / 降级与计量（Task 5）
+
+**状态**：本轮实施
+
+**设计依据**：`docs/ai-interviewer-architecture.md` §3.3 AI 能力网关（及 §3.1 决策超时兜底）。架构示例为 async Protocol；本树运行时仍为 **同步** `structured` / `stream` / `transcribe` / `synthesize`，async 流式留给 Task 6。Protocol 复用并扩展现有 `provider.LLMProvider` 形状，新增 `ASRProvider` / `TTSProvider`（见 `ai/protocols.py`）。
+
+**Gateway**：`ai/gateway.py` + `ai/factory.py`。业务（`service` / `assessment` / `speech` / `modules`）只依赖 Gateway；具体 `Provider` / `LocalWhisper` / `EdgeTTS` 与 `httpx`/`edge_tts`/`whisper` 仅在 `ai/factory` 与既有实现模块出现。
+
+**路由**：按 `Settings.provider`（`LLM_PROVIDER`，默认 `fake`）装配主 LLM；ASR/TTS 仍按 `STT_*` / `TTS_*`。双 provider 注入测试验证选 A 走 A。
+
+**LLM 决策降级**：`decide_next_question(..., elapsed_sec=)` — 超时（默认 >3s）、熔断打开或 primary 抛错 → `rule_next_question` 按题单 seq 取下一题；不依赖真实 wall-clock。
+
+**ASR/TTS 降级**：保持既有行为——失败抛 `SPEECH_UNAVAILABLE`（转写建议改文字；播报建议读题），不静默换云厂商；路径收拢进 Gateway。
+
+**熔断**：进程内 `CircuitBreaker`（失败阈值默认 3 + 冷却窗口）。**不持久化**。多进程 / 多 worker 各自独立，打开状态不共享；水平扩展时可能出现「一进程已熔断、另一进程仍打主供应商」——Task 6 实时网关若多副本需再决策 Redis 共享或边车。
+
+**计量**：表 `ai_usage(tenant, provider, kind, amount, ts)`；`tenant` 可空（Task 4）；`kind` ∈ `llm_tokens|asr_seconds|tts_chars`。迁移 PG `0012` / SQLite `0006`。fake 模式经 `service.usage` / `gateway.meter` 仍写估算 `amount`。
+
+### Gateway 接入边界
+
+| 状态 | 路径 |
+| --- | --- |
+| **已接入** | `structured`：胜任力抽取 / 简历解析 / 出题（非 fake）/ 评分采样；`transcribe`（`speech`→Gateway）；`synthesize`（`/tts`→Gateway）；`stream`（turns SSE 文本分片） |
+| **未接入** | `turn` 的下一题 LLM 决策（`decide_next_question` + `rule_next_question` **已实现且可测**，生产 `service.turn` 仍走既有规则/题单，未调用 Gateway 决策）；练习面 `LLMService` / `chat_api.PracticeChat` |
+| **未接入原因** | 避免改正式面试对话契约；练习面本任务范围外 |
+| **计划** | Task 6 实时网关接入时一并迁移 `turn` 决策路径；练习面是否迁 Gateway **待定** |
+
+超时降级测试：`elapsed_sec` / `timeout_sec` 为**测试注入假值**（非 Gateway 内部 wall-clock 计时）；`test_ai_gateway.py` 全套约 **1.1s**，无真实 sleep。
+
+### Protocol sync → async（Task 6 前置决策，待决）
+
+三选一倾向：**C. 双 Protocol，Gateway 暴露 async 接口、内部调 sync 实现**。
+
+- 理由：架构 §3.3 要 async 流式；现有 `Provider`/`LocalWhisper`/`EdgeTTS` 仍为 sync，C 可保留实现、给实时路径 async 表面，避免 B 的大爆炸改签，也比 A 少把 `run_in_executor` 泄漏到各调用点。
+- A（async 上下文 executor 调 sync）可作为 C 的内部实现细节。
+- **标记为 Task 6 前置决策**；本轮不改 Protocol 为 async。
+
+### 练习面 SDK 约束（例外）
+
+- `llm_service.py`：直接 `import httpx`，自管 OpenAI 兼容 HTTP，**不**经 Gateway，也**不** import `openai`/`anthropic`/`edge_tts`/`whisper` 包。
+- `chat_api.py`：依赖 `LLMService` / `stt_service`，不经 Gateway。
+- AST 扫描（`test_business_modules_do_not_import_*`）范围：**不含** `chat_api.py` / `llm_service.py`（仅 `service`/`assessment`/`speech`/`formal`/`governance`/`records`/`modules`）。
+- **明确例外**：练习面绕过 Gateway；当前未违反「禁止 import openai 等供应商 SDK 包」的业务门禁口径，但 `httpx` 出网留在练习实现内。是否纳入 Gateway **待定**。
+
+**无新依赖**；未新增只读 API。回退：停部署 `0012`/`0006`，业务改回直调 Provider（不推荐）。

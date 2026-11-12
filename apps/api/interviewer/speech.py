@@ -8,12 +8,10 @@ import time
 import wave
 from typing import TYPE_CHECKING
 
-import httpx
 from fastapi import Request
 from python_multipart import FormParser
 from python_multipart.multipart import Field, File, parse_options_header
 
-from .contracts import SpeechOutput
 from .errors import DomainError
 from .service import Result
 
@@ -115,19 +113,8 @@ def transcribe(service: Service, request: Request, identity: str, content: bytes
             text = cached[1]
         else:
             service.auth.limit(f"speech:{identity}", 10)
-            try:
-                if settings.stt_provider == "whisper":
-                    text = service.whisper.transcribe(content).text
-                else:
-                    with httpx.Client(timeout=settings.stt_timeout, follow_redirects=False, trust_env=False) as client:
-                        response = client.post(settings.stt_base_url.rstrip("/") + "/audio/transcriptions",
-                                               headers={"Authorization": f"Bearer {settings.stt_key}"} if settings.stt_key else {},
-                                               files={"file": ("answer.wav", content, "audio/wav")},
-                                               data={"model": settings.stt_model, "language": "zh", "response_format": "json"})
-                        response.raise_for_status()
-                        text = SpeechOutput.model_validate_json(response.content).text
-            except (httpx.HTTPError, ValueError) as error:
-                raise DomainError("SPEECH_UNAVAILABLE", "转写暂不可用，音频未保存；可重试或改用文字") from error
+            with service.database.unit_of_work() as connection:
+                text = service.gateway.transcribe(content, connection=connection)
             # Recheck after a slow network call; erasure/revocation must prevent preview delivery.
             check_speech(service, request, identity)
             if key:

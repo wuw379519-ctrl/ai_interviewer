@@ -28,6 +28,7 @@ EXPECTED_SQLITE_FILES = (
     "0003_supporting_indexes.sql",
     "0004_integrity_guards.sql",
     "0005_interview_events.sql",
+    "0006_ai_usage.sql",
 )
 
 
@@ -113,8 +114,8 @@ def test_sqlite_migration_files_are_append_only_and_parseable() -> None:
 def test_postgres_migration_chain_present_and_immutable_naming() -> None:
     names = sorted(path.name for path in POSTGRES_MIGRATIONS.glob("*.sql"))
     assert names[0] == "0000_init.sql"
-    assert names[-1] == "0011_interview_events.sql"
-    assert len(names) == 12
+    assert names[-1] == "0012_ai_usage.sql"
+    assert len(names) == 13
     for name in names:
         assert re.fullmatch(r"\d{4}_[a-z0-9_]+\.sql", name), name
 

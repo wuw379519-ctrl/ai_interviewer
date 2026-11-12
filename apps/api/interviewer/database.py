@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
-from sqlalchemy import (Boolean, CheckConstraint, Column, ForeignKey,
+from sqlalchemy import (Boolean, CheckConstraint, Column, Float, ForeignKey,
                         ForeignKeyConstraint, Integer, MetaData, String, Table, Text,
                         UniqueConstraint, Uuid, create_engine, event, func, select, text)
 from sqlalchemy.engine import Connection
@@ -169,6 +169,17 @@ interview_events = table(
         "event_type IN ('state_changed','question_asked','answer_received','consent_granted',"
         "'interrupted','score_computed','report_generated')"
     ),
+)
+ai_usage = table(
+    "ai_usage",
+    uid(),
+    txt("tenant", nullable=True),
+    txt("provider", nullable=False),
+    txt("kind", nullable=False),
+    Column("amount", Float, nullable=False),
+    Column("ts", UTCDateTime(), nullable=False, default=now),
+    CheckConstraint("kind IN ('llm_tokens','asr_seconds','tts_chars')"),
+    CheckConstraint("amount >= 0"),
 )
 TABLES = {item.name: item for item in metadata.sorted_tables}
 # The legacy recruitment snapshot format has a fixed table set. Practice stays local to this database.

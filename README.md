@@ -38,7 +38,7 @@ $env:PYTHONPATH = 'apps/api'
 - API 契约为 `http://127.0.0.1:8000/api/openapi.json`，可用 `python -m interviewer.cli openapi` 导出本地文件。浏览器直接调用 API 可用对应的 API 客户端，应用未启用依赖外部 CDN 的交互式文档。
 - 网页通过 `POST /api/auth/login` 提交 `username` 与 `password`。本地合成演示会话在显式启用演示模式后可用空 JSON 对象建立。候选人 API 接受邀请返回的 `inviteToken` 作为 Bearer 令牌，回答前仍须明确同意。
 - 已有 PostgreSQL 16 时，填入 `DB_DRIVER=postgres` 和 `DATABASE_URL`，然后用同一迁移命令。已有脱敏快照可通过 `python -m interviewer.cli import-snapshot --file <文件>` 导入空库。
-- 迁移双链：Postgres 为 `apps/api/migrations/postgres/0000`–`0011`；SQLite 为 `0001_initial`（历史 squash）+ `0002_practice_sessions` + `0003_supporting_indexes` + `0004_integrity_guards` + `0005_interview_events`。空库执行 `python -m interviewer.cli migrate` 一次即可建出与 PG 对齐的业务表（含 `interview_events`）、索引与同意/证据/枚举门禁。结构对等由 `apps/api/tests/test_schema_parity.py` 断言（有 `TEST_DATABASE_URL` 时同时跑 PG16；无则该用例 skip）。本机无可用 PG 时，降级验收为 SQLite 空库 migrate + 迁移 SQL 语法/清单检查 + PRAGMA 列与门禁比对；可复现的 disposable PG `initdb`/`pg_ctl` 命令见 [D70](DECISIONS.md#d70-事件溯源-interview_eventstask-3)。
+- 迁移双链：Postgres 为 `apps/api/migrations/postgres/0000`–`0012`；SQLite 为 `0001`–`0006`（含 `interview_events`、`ai_usage`）。空库执行 `python -m interviewer.cli migrate` 一次即可建出与 PG 对齐的业务表、索引与同意/证据/枚举门禁。结构对等由 `apps/api/tests/test_schema_parity.py` 断言（有 `TEST_DATABASE_URL` 时同时跑 PG16；无则该用例 skip）。本机无可用 PG 时，降级验收为 SQLite 空库 migrate + 迁移 SQL 语法/清单检查 + PRAGMA 列与门禁比对；可复现的 disposable PG `initdb`/`pg_ctl` 命令见 [D70](DECISIONS.md#d70-事件溯源-interview_eventstask-3)。
 
 ## 文本与本地音频面试
 
@@ -115,8 +115,20 @@ FastAPI 默认使用 `127.0.0.1:8000`。端口已被占用时可运行 `node scr
   - `operations/` 健康检查 · `auth/` 账号登录 · `feishu/` 飞书身份 · `jobs/` 岗位
   - `candidates/` 候选人录入 · `interviews/` 邀约与候选人作答 · `assessment/` 评分报告
   - `admin/` 治理与管理员记录 · `practice/` 本机练习对话（挂载 `PracticeChat`）
-- 业务写入、评分与持久化仍在 `service.py` / `assessment.py` / `governance.py` 等既有模块；事件追加在 `events.py`；`modules/*/schemas.py` 仅再导出 `contracts`
+- 业务写入、评分与持久化仍在 `service.py` / `assessment.py` / `governance.py` 等既有模块；事件追加在 `events.py`；AI 出站统一经 `ai/gateway.py`；`modules/*/schemas.py` 仅再导出 `contracts`
 - `interview_events`：append-only 事件表，唯一索引 `(interview_id, seq)`；应用层 `MAX(seq)+1` 单调递增，DB 唯一约束兜底
+- `ai_usage`：AI 计量表（`tenant` 可空待 Task 4；`kind` = `llm_tokens` / `asr_seconds` / `tts_chars`）；fake 模式也会写入估算量
+
+### AI Gateway（配置）
+
+| 环境变量 | 说明 |
+| --- | --- |
+| `LLM_PROVIDER` | 主 LLM 路由，测试/CI 必须为 `fake`；可选 `internal` 等（经 Gateway，业务不直连 SDK） |
+| `LLM_BASE_URL` / `LLM_MODEL` / `LLM_API_KEY` | 非 fake 时的 OpenAI 兼容端点 |
+| `STT_PROVIDER` | `auto` / `http` / `whisper`；失败时现有行为为返回 `SPEECH_UNAVAILABLE` 并建议改用文字（Gateway 纳入同一路径） |
+| `TTS_PROVIDER` | `local`（不播报）/ `edge`（需 `TTS_ALLOW_EXTERNAL` + `TTS_VOICE`）；失败保留「请阅读题目文字」 |
+
+LLM 决策超时阈值默认 3s：Gateway `decide_next_question` 在超时/熔断/错误时按题单 `seq` 顺序规则兜底，测试注入 `elapsed_sec`，不依赖真实 sleep。熔断为进程内失败计数 + 冷却窗口，见 [D71](DECISIONS.md#d71-ai-gateway-路由熔断降级与计量)。
 
 ### 飞书免登（后端骨架）
 
