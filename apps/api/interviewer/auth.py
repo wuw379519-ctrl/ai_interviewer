@@ -15,6 +15,7 @@ from fastapi import Request
 
 from .errors import DomainError
 from .settings import Settings
+from .tenancy import DEFAULT_TENANT_ID
 
 
 def b64(value: bytes) -> str:
@@ -30,6 +31,7 @@ class Actor:
     role: str
     id: str
     name: str
+    tenant_id: str = DEFAULT_TENANT_ID
 
 
 class Auth:
@@ -86,13 +88,15 @@ class Auth:
             self.origin(request)
         key = self.settings.admin_key if role == "admin" else self.settings.recruiter_key
         if key and hmac.compare_digest(request.headers.get("authorization", ""), f"Bearer {key}"):
-            return Actor(role, f"{role}-api", "治理 API" if role == "admin" else "工作空间 API")
+            return Actor(role, f"{role}-api", "治理 API" if role == "admin" else "工作空间 API",
+                         DEFAULT_TENANT_ID)
         if self.valid_session(request.cookies.get(f"aii_{role}", ""), role):
             self.limit(role, 180 if role == "admin" else 90)
-            return Actor(role, role, "工作空间管理员" if role == "admin" else "工作空间招聘者")
+            return Actor(role, role, "工作空间管理员" if role == "admin" else "工作空间招聘者",
+                         DEFAULT_TENANT_ID)
         if role == "recruiter" and self.valid_session(request.cookies.get("aii_admin", ""), "admin"):
             self.limit("admin", 180)
-            return Actor("admin", "admin", "工作空间管理员")
+            return Actor("admin", "admin", "工作空间管理员", DEFAULT_TENANT_ID)
         if role == "admin" and self.valid_session(request.cookies.get("aii_recruiter", ""), "recruiter"):
             raise DomainError("FORBIDDEN", "请使用管理员账号登录")
         raise DomainError("UNAUTHORIZED", "请先登录数据治理管理台" if role == "admin" else "请先登录招聘工作台")

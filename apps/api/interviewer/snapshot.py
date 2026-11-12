@@ -75,8 +75,9 @@ def import_snapshot(database: db.Database, file: Path, quarantine_unconsented: b
                 row[key] = value
             converted[name].append(row)
     with database.transaction() as connection:
+        seed_tables = {"data_policies", "tenants", "users", "role_bindings"}
         if any(db.scalar(connection, select(func.count()).select_from(table))
-               for name, table in db.TABLES.items() if name != "data_policies"):
+               for name, table in db.TABLES.items() if name not in seed_tables):
             raise ValueError("目标数据库非空，拒绝覆盖；请使用独立空库")
         if quarantine_file:
             descriptor = os.open(quarantine_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -87,8 +88,12 @@ def import_snapshot(database: db.Database, file: Path, quarantine_unconsented: b
         # Restore the identical gate before commit. Other connections never see an unguarded committed schema.
         with database.historical_answer_import(connection):
             db.command(connection, db.data_policies.delete())
+            # Preserve seeded tenancy rows; wipe only if the snapshot supplies replacements.
+            for name in ("role_bindings", "users", "tenants"):
+                if converted.get(name):
+                    db.command(connection, db.TABLES[name].delete())
             for table in db.TABLES.values():
-                for row in converted[table.name]:
+                for row in converted.get(table.name, []):
                     db.insert(connection, table, row)
         db.insert(connection, db.audit_logs, {"actor_type": "system", "actor_id": "python-migration", "action": "migration.imported",
                   "metadata": {"format": snapshot.format, "counts": {name: len(rows) for name, rows in tables.items()}, "quarantinedInterviews": len(unconsented)}})

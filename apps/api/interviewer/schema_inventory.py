@@ -25,24 +25,41 @@ BUSINESS_TABLES: frozenset[str] = frozenset({
     "questions",
     "reports",
     "resumes",
+    "role_bindings",
     "score_revisions",
     "scores",
+    "tenants",
     "turns",
+    "users",
 })
 
 # Key columns that must exist with matching nullability on both drivers.
 REQUIRED_COLUMNS: Mapping[str, Mapping[str, bool]] = {
+    "tenants": {
+        "id": False, "name": False, "status": False, "created_at": False, "updated_at": False,
+    },
+    "users": {
+        "id": False, "tenant_id": False, "external_key": False, "display_name": True, "status": False,
+        "created_at": False, "updated_at": False,
+    },
+    "role_bindings": {
+        "id": False, "user_id": False, "tenant_id": False, "role": False,
+        "created_at": False, "updated_at": False,
+    },
     "jobs": {
         "id": False, "title": False, "jd_text": False, "department": True, "seniority": True,
-        "location": True, "status": False, "recruitment_track": False, "created_at": False, "updated_at": False,
+        "location": True, "status": False, "recruitment_track": False, "tenant_id": True,
+        "created_at": False, "updated_at": False,
     },
     "candidates": {
         "id": False, "job_id": False, "full_name": False, "email": True, "phone": True, "source": True,
-        "retained_until": False, "deleted_at": True, "erased_at": True, "created_at": False, "updated_at": False,
+        "retained_until": False, "deleted_at": True, "erased_at": True, "tenant_id": True,
+        "created_at": False, "updated_at": False,
     },
     "competencies": {
         "id": False, "job_id": False, "name": False, "description": False, "weight_bp": False,
-        "bars_anchors": False, "order_index": False, "status": False, "created_at": False, "updated_at": False,
+        "bars_anchors": False, "order_index": False, "status": False, "tenant_id": True,
+        "created_at": False, "updated_at": False,
     },
     "interviews": {
         "id": False, "candidate_id": False, "job_id": False, "status": False, "duration_minutes": False,
@@ -51,68 +68,69 @@ REQUIRED_COLUMNS: Mapping[str, Mapping[str, bool]] = {
         "finished_at": True, "last_activity_at": True, "paused_at": True, "paused_total_sec": False,
         "camera_required": False, "camera_active": False, "microphone_active": False, "media_last_seen_at": True,
         "text_fallback": False, "recruitment_track": False, "graduate_verification": True, "retention_days": False,
-        "created_at": False, "updated_at": False,
+        "tenant_id": True, "created_at": False, "updated_at": False,
     },
     "questions": {
         "id": False, "interview_id": False, "competency_id": False, "seq": False, "prompt": False,
         "intent": True, "followups": False, "time_budget_sec": False, "status": False, "topic_key": True,
-        "mandatory": False, "assessment_mode": False, "created_at": False, "updated_at": False,
+        "mandatory": False, "assessment_mode": False, "tenant_id": True, "created_at": False, "updated_at": False,
     },
     "turns": {
         "id": False, "interview_id": False, "question_id": True, "seq": False, "role": False, "content": False,
-        "is_followup": False, "parent_turn_id": True, "redacted": False, "created_at": False, "updated_at": False,
+        "is_followup": False, "parent_turn_id": True, "redacted": False, "tenant_id": True,
+        "created_at": False, "updated_at": False,
     },
     "evidence": {
         "id": False, "interview_id": False, "turn_id": False, "competency_id": False, "quote": False,
-        "start_offset": True, "end_offset": True, "created_at": False, "updated_at": False,
+        "start_offset": True, "end_offset": True, "tenant_id": True, "created_at": False, "updated_at": False,
     },
     "scores": {
         "id": False, "interview_id": False, "competency_id": False, "evidence_id": True, "value": False,
         "numeric_value": True, "needs_review": False, "rationale": True, "attempt": False, "model": True,
-        "prompt_version": True, "prompt_tokens": True, "completion_tokens": True, "created_at": False,
-        "updated_at": False,
+        "prompt_version": True, "prompt_tokens": True, "completion_tokens": True, "tenant_id": True,
+        "created_at": False, "updated_at": False,
     },
     "score_revisions": {
         "id": False, "score_id": False, "actor_id": False, "actor_name": True, "old_value": False,
-        "new_value": False, "reason": False, "created_at": False, "updated_at": False,
+        "new_value": False, "reason": False, "tenant_id": True, "created_at": False, "updated_at": False,
     },
     "reports": {
         "id": False, "interview_id": False, "overall_summary": False, "dimension_scores": False,
         "question_scores": False, "revision": False, "highlights": False, "risks": False,
         "next_questions": False, "recommendation": False, "recommendation_reason": False, "metadata": False,
-        "prompt_version": True, "retained_until": False, "generated_at": False, "created_at": False,
-        "updated_at": False,
+        "prompt_version": True, "retained_until": False, "generated_at": False, "tenant_id": True,
+        "created_at": False, "updated_at": False,
     },
     "consents": {
         "id": False, "interview_id": False, "consent_version": False, "consent_text_hash": False,
         "recording_allowed": False, "consented_at": False, "revoked_at": True, "ip_hash": True,
-        "created_at": False, "updated_at": False,
+        "tenant_id": True, "created_at": False, "updated_at": False,
     },
     "resumes": {
         "id": False, "candidate_id": False, "file_name": False, "mime_type": False, "raw_text": False,
-        "parsed": False, "unverified_claims": False, "created_at": False, "updated_at": False,
+        "parsed": False, "unverified_claims": False, "tenant_id": True, "created_at": False, "updated_at": False,
     },
     "idempotency_keys": {
         "id": False, "scope": False, "key": False, "request_hash": False, "status": False,
         "response_status": True, "response_body": True, "expires_at": False, "owner_candidate_id": True,
-        "owner_interview_id": True, "created_at": False, "updated_at": False,
+        "owner_interview_id": True, "tenant_id": True, "created_at": False, "updated_at": False,
     },
     "data_policies": {
-        "id": False, "retention_days": False, "revision": False, "updated_by": False,
+        "id": False, "retention_days": False, "revision": False, "updated_by": False, "tenant_id": True,
         "created_at": False, "updated_at": False,
     },
     "audit_logs": {
         "id": False, "actor_type": False, "actor_id": True, "action": False, "entity_type": True,
-        "entity_id": True, "interview_id": True, "metadata": True, "ip_hash": True,
+        "entity_id": True, "interview_id": True, "metadata": True, "ip_hash": True, "tenant_id": True,
         "created_at": False, "updated_at": False,
     },
     "practice_sessions": {
         "id": False, "token_hash": False, "consent_version": False, "turns": False,
-        "retained_until": False, "created_at": False, "updated_at": False,
+        "retained_until": False, "tenant_id": True, "created_at": False, "updated_at": False,
     },
     "interview_events": {
         "id": False, "interview_id": False, "seq": False, "event_type": False, "payload": False,
-        "ts": False, "created_at": False, "updated_at": False,
+        "ts": False, "tenant_id": True, "created_at": False, "updated_at": False,
     },
     "ai_usage": {
         "id": False, "tenant": True, "provider": False, "kind": False, "amount": False,
@@ -122,10 +140,12 @@ REQUIRED_COLUMNS: Mapping[str, Mapping[str, bool]] = {
 
 # Index names expected on both drivers after full migrate (unique table constraints may substitute).
 REQUIRED_INDEXES: Mapping[str, frozenset[str]] = {
-    "audit_logs": frozenset({"audit_logs_action_idx", "audit_logs_interview_idx", "audit_logs_created_at_idx"}),
+    "audit_logs": frozenset({
+        "audit_logs_action_idx", "audit_logs_interview_idx", "audit_logs_created_at_idx", "audit_logs_tenant_idx",
+    }),
     "candidates": frozenset({
         "candidates_job_idx", "candidates_email_idx", "candidates_deleted_at_idx",
-        "candidates_retained_until_idx", "candidates_erased_at_idx",
+        "candidates_retained_until_idx", "candidates_erased_at_idx", "candidates_tenant_idx",
     }),
     "competencies": frozenset({"competencies_job_idx"}),
     "consents": frozenset({"consents_interview_idx"}),
@@ -133,15 +153,17 @@ REQUIRED_INDEXES: Mapping[str, frozenset[str]] = {
     "idempotency_keys": frozenset({
         "idempotency_expires_idx", "idempotency_candidate_idx", "idempotency_interview_idx",
     }),
-    "interviews": frozenset({"interviews_candidate_idx", "interviews_status_idx"}),
-    "jobs": frozenset({"jobs_status_idx", "jobs_created_at_idx"}),
+    "interviews": frozenset({"interviews_candidate_idx", "interviews_status_idx", "interviews_tenant_idx"}),
+    "jobs": frozenset({"jobs_status_idx", "jobs_created_at_idx", "jobs_tenant_idx"}),
     "questions": frozenset({"questions_interview_idx"}),
     "resumes": frozenset({"resumes_candidate_idx"}),
+    "role_bindings": frozenset({"role_bindings_tenant_idx", "role_bindings_user_idx"}),
     "score_revisions": frozenset({"score_revisions_score_idx"}),
     "scores": frozenset({"scores_interview_idx", "scores_evidence_idx"}),
     "turns": frozenset({"turns_interview_idx", "turns_question_idx"}),
-    "interview_events": frozenset({"interview_events_interview_idx"}),
+    "interview_events": frozenset({"interview_events_interview_idx", "interview_events_tenant_idx"}),
     "ai_usage": frozenset({"ai_usage_provider_ts_idx", "ai_usage_tenant_ts_idx"}),
+    "users": frozenset({"users_tenant_idx"}),
 }
 
 # Safety gates that must exist (trigger name contains / equals these tokens).

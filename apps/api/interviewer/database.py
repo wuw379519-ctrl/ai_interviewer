@@ -19,6 +19,7 @@ from sqlalchemy.schema import SchemaItem
 from sqlalchemy.sql import Executable
 
 from .settings import ROOT, Settings
+from .tenancy import DEFAULT_TENANT_ID
 
 Row = dict[str, object]
 metadata = MetaData()
@@ -75,20 +76,57 @@ def table(name: str, *columns: SchemaItem) -> Table:
                  Column("updated_at", UTCDateTime(), nullable=False, default=now, onupdate=now, server_default=func.now()))
 
 
+def tenant_id_column() -> Column[str]:
+    return Column(
+        "tenant_id",
+        String(36),
+        ForeignKey("tenants.id"),
+        nullable=True,
+        default=DEFAULT_TENANT_ID,
+    )
+
+
+tenants = table(
+    "tenants",
+    Column("id", String(36), primary_key=True, default=identifier),
+    txt("name", nullable=False),
+    txt("status", "active", False),
+    UniqueConstraint("name"),
+    CheckConstraint("status IN ('active','suspended','closed')"),
+)
+users = table(
+    "users",
+    Column("id", String(36), primary_key=True, default=identifier),
+    Column("tenant_id", String(36), ForeignKey("tenants.id"), nullable=False),
+    txt("external_key", nullable=False),
+    txt("display_name"),
+    txt("status", "active", False),
+    UniqueConstraint("tenant_id", "external_key"),
+    CheckConstraint("status IN ('active','disabled')"),
+)
+role_bindings = table(
+    "role_bindings",
+    Column("id", String(36), primary_key=True, default=identifier),
+    Column("user_id", String(36), ForeignKey("users.id"), nullable=False),
+    Column("tenant_id", String(36), ForeignKey("tenants.id"), nullable=False),
+    txt("role", nullable=False),
+    UniqueConstraint("user_id", "tenant_id", "role"),
+    CheckConstraint("role IN ('admin','recruiter')"),
+)
 jobs = table("jobs", uid(), txt("title", nullable=False), txt("jd_text", nullable=False),
              txt("department"), txt("seniority"), txt("location"), txt("status", "draft", False),
-             txt("recruitment_track", "general", False))
+             txt("recruitment_track", "general", False), tenant_id_column())
 competencies = table("competencies", uid(), uid("job_id", "jobs.id"), txt("name", nullable=False),
                      txt("description", nullable=False), integer("weight_bp"), document("bars_anchors"),
-                     integer("order_index"), txt("status", "proposed", False),
+                     integer("order_index"), txt("status", "proposed", False), tenant_id_column(),
                      UniqueConstraint("job_id", "name"), CheckConstraint("weight_bp BETWEEN 0 AND 10000"))
 candidates = table("candidates", uid(), uid("job_id", "jobs.id", ondelete="RESTRICT"),
                    txt("full_name", nullable=False), txt("email"), txt("phone"), txt("source"),
-                   date("retained_until", False), date("deleted_at"), date("erased_at"),
+                   date("retained_until", False), date("deleted_at"), date("erased_at"), tenant_id_column(),
                    CheckConstraint("erased_at IS NULL OR deleted_at IS NOT NULL"))
 resumes = table("resumes", uid(), uid("candidate_id", "candidates.id"), txt("file_name", nullable=False),
                 txt("mime_type", nullable=False), txt("raw_text", nullable=False), document("parsed"),
-                document("unverified_claims"))
+                document("unverified_claims"), tenant_id_column())
 interviews = table("interviews", uid(), uid("candidate_id", "candidates.id", ondelete="RESTRICT"),
                    uid("job_id", "jobs.id", ondelete="RESTRICT"), txt("status", "created", False),
                    integer("duration_minutes"), txt("invite_token_hash"), date("invite_expires_at"),
@@ -98,24 +136,24 @@ interviews = table("interviews", uid(), uid("candidate_id", "candidates.id", ond
                    integer("paused_total_sec"), boolean("camera_required"), boolean("camera_active"),
                    boolean("microphone_active"), date("media_last_seen_at"), boolean("text_fallback"),
                    txt("recruitment_track", "general", False), document("graduate_verification", True),
-                   integer("retention_days", 90), UniqueConstraint("invite_token_hash"),
+                   integer("retention_days", 90), tenant_id_column(), UniqueConstraint("invite_token_hash"),
                    CheckConstraint("duration_minutes IN (15,30,45)"),
                    CheckConstraint("retention_days BETWEEN 1 AND 90"))
 questions = table("questions", uid(), uid("interview_id", "interviews.id"),
                   uid("competency_id", "competencies.id", ondelete="RESTRICT"), integer("seq"),
                   txt("prompt", nullable=False), txt("intent"), document("followups"), integer("time_budget_sec", 1),
                   txt("status", "pending", False), txt("topic_key"), boolean("mandatory"),
-                  txt("assessment_mode", "scored", False), UniqueConstraint("interview_id", "seq"),
+                  txt("assessment_mode", "scored", False), tenant_id_column(), UniqueConstraint("interview_id", "seq"),
                   CheckConstraint("seq > 0 AND time_budget_sec > 0"))
 turns = table("turns", uid(), uid("interview_id", "interviews.id"),
               uid("question_id", "questions.id", True, "SET NULL"), integer("seq"),
               txt("role", nullable=False), txt("content", nullable=False), boolean("is_followup"),
-              uid("parent_turn_id", "turns.id", True, "SET NULL"), boolean("redacted"),
+              uid("parent_turn_id", "turns.id", True, "SET NULL"), boolean("redacted"), tenant_id_column(),
               UniqueConstraint("interview_id", "seq", name="turns_interview_seq_uq"),
               UniqueConstraint("id", "interview_id"), CheckConstraint("seq > 0"))
 evidence = table("evidence", uid(), uid("interview_id", "interviews.id"), uid("turn_id", "turns.id"),
                  uid("competency_id", "competencies.id", ondelete="RESTRICT"), txt("quote", nullable=False),
-                 integer("start_offset", nullable=True), integer("end_offset", nullable=True),
+                 integer("start_offset", nullable=True), integer("end_offset", nullable=True), tenant_id_column(),
                  UniqueConstraint("id", "interview_id", "competency_id"),
                  ForeignKeyConstraint(["turn_id", "interview_id"], ["turns.id", "turns.interview_id"], ondelete="CASCADE"),
                  CheckConstraint("length(trim(quote)) > 0"))
@@ -125,6 +163,7 @@ scores = table("scores", uid(), uid("interview_id", "interviews.id"),
                integer("numeric_value", nullable=True), boolean("needs_review"), txt("rationale"),
                integer("attempt", 1), txt("model"), txt("prompt_version"),
                integer("prompt_tokens", nullable=True), integer("completion_tokens", nullable=True),
+               tenant_id_column(),
                UniqueConstraint("interview_id", "competency_id", "attempt"),
                ForeignKeyConstraint(["evidence_id", "interview_id", "competency_id"],
                                     ["evidence.id", "evidence.interview_id", "evidence.competency_id"]),
@@ -133,27 +172,30 @@ scores = table("scores", uid(), uid("interview_id", "interviews.id"),
                CheckConstraint("attempt IN (1,2)"))
 score_revisions = table("score_revisions", uid(), uid("score_id", "scores.id"), txt("actor_id", nullable=False),
                         txt("actor_name"), txt("old_value", nullable=False), txt("new_value", nullable=False),
-                        txt("reason", nullable=False))
+                        txt("reason", nullable=False), tenant_id_column())
 reports = table("reports", uid(), uid("interview_id", "interviews.id"), txt("overall_summary", nullable=False),
                 document("dimension_scores"), document("question_scores"), integer("revision", 1),
                 document("highlights"), document("risks"), document("next_questions"),
                 txt("recommendation", nullable=False), txt("recommendation_reason", nullable=False),
                 document("metadata"), txt("prompt_version"), date("retained_until", False),
-                Column("generated_at", UTCDateTime(), nullable=False, default=now),
+                Column("generated_at", UTCDateTime(), nullable=False, default=now), tenant_id_column(),
                 UniqueConstraint("interview_id"))
 consents = table("consents", uid(), uid("interview_id", "interviews.id"), txt("consent_version", nullable=False),
                  txt("consent_text_hash", nullable=False), boolean("recording_allowed"), date("consented_at", False),
-                 date("revoked_at"), txt("ip_hash"), UniqueConstraint("interview_id", "consent_version"))
+                 date("revoked_at"), txt("ip_hash"), tenant_id_column(),
+                 UniqueConstraint("interview_id", "consent_version"))
 audit_logs = table("audit_logs", uid(), txt("actor_type", nullable=False), txt("actor_id"),
                    txt("action", nullable=False), txt("entity_type"), txt("entity_id"),
-                   Column("interview_id", Uuid(as_uuid=False)), document("metadata", True), txt("ip_hash"))
+                   Column("interview_id", Uuid(as_uuid=False)), document("metadata", True), txt("ip_hash"),
+                   tenant_id_column())
 idempotency_keys = table("idempotency_keys", uid(), txt("scope", nullable=False), txt("key", nullable=False),
                          txt("request_hash", nullable=False), txt("status", "in_progress", False),
                          integer("response_status", nullable=True), document("response_body", True),
                          date("expires_at", False), Column("owner_candidate_id", Uuid(as_uuid=False)),
-                         Column("owner_interview_id", Uuid(as_uuid=False)), UniqueConstraint("scope", "key"))
+                         Column("owner_interview_id", Uuid(as_uuid=False)), tenant_id_column(),
+                         UniqueConstraint("scope", "key"))
 data_policies = table("data_policies", Column("id", String, primary_key=True), integer("retention_days", 90),
-                      integer("revision", 1), txt("updated_by", "system", False),
+                      integer("revision", 1), txt("updated_by", "system", False), tenant_id_column(),
                       CheckConstraint("id = 'workspace' AND retention_days BETWEEN 1 AND 90 AND revision > 0"))
 interview_events = table(
     "interview_events",
@@ -163,6 +205,7 @@ interview_events = table(
     txt("event_type", nullable=False),
     document("payload"),
     Column("ts", UTCDateTime(), nullable=False, default=now),
+    tenant_id_column(),
     UniqueConstraint("interview_id", "seq", name="interview_events_interview_seq_uq"),
     CheckConstraint("seq > 0"),
     CheckConstraint(
@@ -173,7 +216,7 @@ interview_events = table(
 ai_usage = table(
     "ai_usage",
     uid(),
-    txt("tenant", nullable=True),
+    Column("tenant", String(36), ForeignKey("tenants.id"), nullable=True, default=DEFAULT_TENANT_ID),
     txt("provider", nullable=False),
     txt("kind", nullable=False),
     Column("amount", Float, nullable=False),
@@ -185,7 +228,7 @@ TABLES = {item.name: item for item in metadata.sorted_tables}
 # The legacy recruitment snapshot format has a fixed table set. Practice stays local to this database.
 practice_sessions = table("practice_sessions", uid(), txt("token_hash", nullable=False),
                           txt("consent_version", nullable=False), document("turns"),
-                          date("retained_until", False), UniqueConstraint("token_hash"))
+                          date("retained_until", False), tenant_id_column(), UniqueConstraint("token_hash"))
 
 
 def rows(connection: StorageSession | Connection, statement: Executable) -> list[Row]:
@@ -285,7 +328,22 @@ class Database:
                             connection.exec_driver_sql(statement)
                     connection.execute(text("INSERT INTO __python_migrations(id,checksum) VALUES (:id,:checksum)"), {"id": file.name, "checksum": checksum})
         with self.transaction() as connection:
-            repository(connection).insert_if_absent(data_policies, {"id": "workspace", "retention_days": 90, "revision": 1}, ["id"])
+            # Ensure default tenant exists before any FK-backed seed rows (SQLite/PG).
+            repository(connection).insert_if_absent(
+                tenants,
+                {"id": DEFAULT_TENANT_ID, "name": "default", "status": "active"},
+                ["id"],
+            )
+            repository(connection).insert_if_absent(
+                data_policies,
+                {
+                    "id": "workspace",
+                    "retention_days": 90,
+                    "revision": 1,
+                    "tenant_id": DEFAULT_TENANT_ID,
+                },
+                ["id"],
+            )
 
     def _postgres_migrate(self) -> None:
         with self.engine.begin() as connection:

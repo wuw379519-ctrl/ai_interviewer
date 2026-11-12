@@ -1,10 +1,11 @@
-"""Persist ai_usage meter rows (tenant nullable until Task 4)."""
+"""Persist ai_usage meter rows (tenant aligned with tenants.id)."""
 from __future__ import annotations
 
 from typing import Literal
 
 from interviewer import database as db
 from interviewer.repository import StorageSession
+from interviewer.tenancy import DEFAULT_TENANT_ID
 
 UsageKind = Literal["llm_tokens", "asr_seconds", "tts_chars"]
 
@@ -21,7 +22,7 @@ def record_ai_usage(
         connection,
         db.ai_usage,
         {
-            "tenant": tenant,
+            "tenant": tenant or DEFAULT_TENANT_ID,
             "provider": provider,
             "kind": kind,
             "amount": float(amount),
