@@ -7,6 +7,7 @@ import { api, ClientApiError } from "@/lib/client-api";
 import { Shell } from "./shell";
 import { ReportRadar } from "./report-radar";
 import { GraduateReviewPanel, qualificationLabels } from "./graduate-review-panel";
+import { ReportProctorRisks } from "./report-proctor-risks";
 
 const recommendations = { strong_yes: "strong_yes · 建议重点推进", yes: "yes · 建议推进", mixed: "mixed · 待补充或人工复核", no: "no · 当前证据暂不支持推进" };
 const scoreText = (value: ScoreValue) => value === "insufficient_evidence" ? "证据不足" : `${value}/5`;
@@ -72,6 +73,7 @@ export function ReportPanel({ id }: { id: string }) {
         </section>
         <section className="report-sheet" data-testid="report-sheet">
           <header className="report-evidence-heading"><h2>原文证据与下一轮验证</h2><span>{report.candidateLabel} · v{report.revision}</span></header>
+          <ReportProctorRisks items={report.riskItems} />
           <div className="report-evidence-grid">{report.dimensions.map((dimension, index) => {
             const evidence = report.evidence.filter((row) => dimension.evidenceIds.includes(row.id)), first = evidence[0];
             return <section className="report-evidence-card" key={dimension.competencyId}><h3><span className="no-print">{dimension.competencyName}</span><span className="report-print-only">维度 {index + 1}</span> · {scoreText(dimension.score)}</h3>{first ? <><blockquote>“{first.quote}”</blockquote><p className="report-citation">turn_id: {first.turnId} · #{first.turnSeq}</p>{evidence.length > 1 && <details className="no-print"><summary>查看其余{evidence.length - 1}条证据</summary>{evidence.slice(1).map((row) => <div key={row.id}><blockquote>“{row.quote}”</blockquote><p className="report-citation">turn_id: {row.turnId} · 第{row.turnSeq}轮</p></div>)}</details>}</> : <p>insufficient_evidence · 无可验证原文，不编造引用。</p>}</section>;

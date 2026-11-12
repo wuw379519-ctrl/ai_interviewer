@@ -12,6 +12,7 @@ from pydantic import ValidationError
 
 from interviewer import database as db
 from interviewer.realtime.pipeline import RealtimePipeline
+from interviewer.proctoring import append_proctor_log
 from interviewer.realtime.protocol import (
     AuthMessage,
     CloseMessage,
@@ -21,6 +22,7 @@ from interviewer.realtime.protocol import (
     InterruptMessage,
     PingMessage,
     PongMessage,
+    ProctorSignalMessage,
     ReadyMessage,
     StartMessage,
     StateChangedMessage,
@@ -31,7 +33,7 @@ from interviewer.realtime.protocol import (
 )
 from interviewer.realtime.session_store import SessionStore
 from interviewer.service import Service
-from interviewer.tenancy import DEFAULT_TENANT_ID, set_current_tenant
+from interviewer.tenancy import DEFAULT_TENANT_ID, reset_current_tenant, set_current_tenant
 
 logger = logging.getLogger("interviewer.realtime")
 
@@ -126,6 +128,25 @@ def build_realtime_router(store: SessionStore) -> APIRouter:
                     continue
                 if isinstance(message, InterruptMessage):
                     await pipeline.handle_client_interrupt()
+                    continue
+                if isinstance(message, ProctorSignalMessage):
+                    token_ctx = set_current_tenant(tenant_id)
+                    try:
+                        with service.database.unit_of_work() as connection:
+                            append_proctor_log(
+                                connection,
+                                interview_id,
+                                message.signal_type,
+                                dict(message.payload),
+                            )
+                    finally:
+                        reset_current_tenant(token_ctx)
+                    await send_locked(
+                        StateChangedMessage(
+                            status=str(row["status"]),
+                            detail={"via": "proctor_signal_ack", "signalType": message.signal_type},
+                        )
+                    )
                     continue
                 if isinstance(message, AuthMessage):
                     await send_locked(ErrorMessage(code="VALIDATION_FAILED", message="已认证，勿重复 auth"))

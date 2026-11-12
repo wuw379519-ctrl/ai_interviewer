@@ -27,7 +27,7 @@ _current_tenant: ContextVar[str | None] = ContextVar("app_tenant_id", default=No
 TENANT_SCOPED_TABLES = frozenset({
     "jobs", "candidates", "competencies", "interviews", "questions", "turns", "evidence",
     "scores", "score_revisions", "reports", "consents", "resumes", "idempotency_keys",
-    "data_policies", "audit_logs", "interview_events", "practice_sessions",
+    "data_policies", "audit_logs", "interview_events", "practice_sessions", "proctor_logs",
 })
 
 

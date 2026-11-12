@@ -95,9 +95,14 @@ export class InterviewWsClient {
     });
   }
 
-  /** Enqueue if not open; otherwise send immediately. Ping/close bypass the offline queue. */
+  /** Enqueue if not open; otherwise send immediately. Ping/close/proctor bypass the offline queue. */
   send(message: RealtimeClientMessage): void {
-    if (message.type === "ping" || message.type === "close" || message.type === "auth") {
+    if (
+      message.type === "ping"
+      || message.type === "close"
+      || message.type === "auth"
+      || message.type === "proctor_signal"
+    ) {
       this.sendNow(message);
       return;
     }

@@ -8206,6 +8206,55 @@
         ],
         "title": "PrintInput"
       },
+      "ProctorRiskItem": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 2,
+            "title": "Code"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "hint",
+              "review"
+            ],
+            "title": "Severity"
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 600,
+            "minLength": 4,
+            "title": "Message"
+          },
+          "signalCount": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Signalcount",
+            "default": 0
+          },
+          "affectsScore": {
+            "type": "boolean",
+            "title": "Affectsscore",
+            "default": false
+          },
+          "forHumanReview": {
+            "type": "boolean",
+            "title": "Forhumanreview",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "severity",
+          "message"
+        ],
+        "title": "ProctorRiskItem",
+        "description": "Structured proctoring risk — never enters scoring evidence; humans decide."
+      },
       "QuestionAssessment": {
         "properties": {
           "questionId": {
@@ -8371,6 +8420,13 @@
             },
             "type": "array",
             "title": "Risks"
+          },
+          "riskItems": {
+            "items": {
+              "$ref": "#/components/schemas/ProctorRiskItem"
+            },
+            "type": "array",
+            "title": "Riskitems"
           },
           "nextQuestions": {
             "items": {

@@ -224,6 +224,7 @@ class RealtimePipeline:
         if from_audio:
             pcm = bytes(self.pcm_buffer)
             self.pcm_buffer.clear()
+            self._record_audio_proctor(pcm)
             wav = pcm16le_to_wav(pcm)
             try:
                 text = await asyncio.to_thread(self._transcribe, wav)
@@ -329,6 +330,53 @@ class RealtimePipeline:
 
     def _transcribe(self, wav: bytes) -> str:
         return self.service.gateway.transcribe(wav)
+
+    def _record_audio_proctor(self, pcm: bytes) -> None:
+        """Derive silence_ratio / volume_spike from PCM — no PII; never scoring evidence."""
+        if len(pcm) < 4:
+            return
+        from interviewer.proctoring import append_proctor_log
+        from interviewer.realtime.vad import EnergyVad
+
+        usable = pcm if len(pcm) % 2 == 0 else pcm[:-1]
+        frame = 640  # 20ms @ 16kHz s16le
+        quiet = 0
+        total = 0
+        prev_rms = 0.0
+        max_delta = 0.0
+        probe = EnergyVad()
+        for offset in range(0, len(usable), frame):
+            chunk = usable[offset : offset + frame]
+            if len(chunk) < 2:
+                break
+            decision = probe.push(chunk)
+            total += 1
+            if decision.rms < 200:
+                quiet += 1
+            if prev_rms > 0:
+                max_delta = max(max_delta, abs(decision.rms - prev_rms))
+            prev_rms = decision.rms
+        if total == 0:
+            return
+        ratio = quiet / total
+        token = set_current_tenant(self.session.tenant_id)
+        try:
+            with self.service.database.unit_of_work() as connection:
+                append_proctor_log(
+                    connection,
+                    self.session.interview_id,
+                    "silence_ratio",
+                    {"ratio": round(ratio, 4), "frames": total},
+                )
+                if max_delta >= 4000:
+                    append_proctor_log(
+                        connection,
+                        self.session.interview_id,
+                        "volume_spike",
+                        {"rmsDelta": round(max_delta, 2)},
+                    )
+        finally:
+            reset_current_tenant(token)
 
     def _commit_turn(
         self,

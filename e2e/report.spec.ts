@@ -45,6 +45,9 @@ test("完整面试后生成报告、打印两页、改分留痕与人工完成�
   await expect(page.getByRole("heading", { name: "结构化面试报告", exact: true })).toBeVisible();
   await expect(page.getByText("原文证据与下一轮验证", { exact: true })).toBeVisible();
   await expect(page.getByRole("img", { name: "胜任力雷达图", exact: false })).toBeVisible();
+  await expect(page.getByTestId("report-proctor-risks")).toBeVisible();
+  await expect(page.getByTestId("report-proctor-risks")).toContainText("过程信号提示");
+  await expect(page.getByTestId("report-proctor-risks")).toContainText("不参与评分");
   await page.evaluate(() => { window.print = () => undefined; });
   const auditPrint = page.waitForResponse((response) => response.url().endsWith("/print") && response.request().method() === "POST");
   await page.getByRole("button", { name: "打印 / 另存为 PDF", exact: true }).click();

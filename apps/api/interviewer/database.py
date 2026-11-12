@@ -224,6 +224,19 @@ ai_usage = table(
     CheckConstraint("kind IN ('llm_tokens','asr_seconds','tts_chars')"),
     CheckConstraint("amount >= 0"),
 )
+proctor_logs = table(
+    "proctor_logs",
+    uid(),
+    uid("interview_id", "interviews.id"),
+    Column("tenant_id", String(36), ForeignKey("tenants.id"), nullable=False, default=DEFAULT_TENANT_ID),
+    txt("signal_type", nullable=False),
+    document("payload"),
+    Column("ts", UTCDateTime(), nullable=False, default=now),
+    CheckConstraint(
+        "signal_type IN ('tab_hidden','window_blur','answer_latency',"
+        "'silence_ratio','volume_spike','speech_rate')"
+    ),
+)
 TABLES = {item.name: item for item in metadata.sorted_tables}
 # The legacy recruitment snapshot format has a fixed table set. Practice stays local to this database.
 practice_sessions = table("practice_sessions", uid(), txt("token_hash", nullable=False),

@@ -16,7 +16,8 @@ MAX_AUDIO_CHUNK_PCM_BYTES = 32_000
 MAX_AUDIO_CHUNK_BASE64_CHARS = 44_000
 
 ClientType = Literal[
-    "auth", "start", "audio_chunk", "text_input", "end_turn", "interrupt", "ping", "close",
+    "auth", "start", "audio_chunk", "text_input", "end_turn", "interrupt",
+    "proctor_signal", "ping", "close",
 ]
 ServerType = Literal[
     "ready", "question", "partial_transcript", "final_transcript", "tts_chunk",
@@ -76,6 +77,20 @@ class InterruptMessage(Envelope):
     type: Literal["interrupt"] = "interrupt"
 
 
+class ProctorSignalMessage(Envelope):
+    """Client telemetry for Task 7 — never treated as assessment content."""
+
+    type: Literal["proctor_signal"] = "proctor_signal"
+    signal_type: Literal[
+        "tab_hidden", "window_blur", "answer_latency",
+        "silence_ratio", "volume_spike", "speech_rate",
+    ] = Field(alias="signalType")
+    payload: dict[str, object] = Field(default_factory=dict)
+    t: int | None = None
+
+    model_config = {"populate_by_name": True}
+
+
 class PingMessage(Envelope):
     type: Literal["ping"] = "ping"
     t: int | None = None
@@ -88,7 +103,7 @@ class CloseMessage(Envelope):
 
 ClientMessage = Annotated[
     AuthMessage | StartMessage | AudioChunkMessage | TextInputMessage
-    | EndTurnMessage | InterruptMessage | PingMessage | CloseMessage,
+    | EndTurnMessage | InterruptMessage | ProctorSignalMessage | PingMessage | CloseMessage,
     Field(discriminator="type"),
 ]
 
@@ -194,7 +209,8 @@ def client_validation_error(text: str) -> str | None:
 
 
 CLIENT_TYPES: tuple[str, ...] = (
-    "auth", "start", "audio_chunk", "text_input", "end_turn", "interrupt", "ping", "close",
+    "auth", "start", "audio_chunk", "text_input", "end_turn", "interrupt",
+    "proctor_signal", "ping", "close",
 )
 SERVER_TYPES: tuple[str, ...] = (
     "ready", "question", "partial_transcript", "final_transcript", "tts_chunk",

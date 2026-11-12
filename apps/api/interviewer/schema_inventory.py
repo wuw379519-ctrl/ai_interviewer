@@ -22,6 +22,7 @@ BUSINESS_TABLES: frozenset[str] = frozenset({
     "interviews",
     "jobs",
     "practice_sessions",
+    "proctor_logs",
     "questions",
     "reports",
     "resumes",
@@ -136,6 +137,10 @@ REQUIRED_COLUMNS: Mapping[str, Mapping[str, bool]] = {
         "id": False, "tenant": True, "provider": False, "kind": False, "amount": False,
         "ts": False, "created_at": False, "updated_at": False,
     },
+    "proctor_logs": {
+        "id": False, "interview_id": False, "tenant_id": False, "signal_type": False,
+        "payload": False, "ts": False, "created_at": False, "updated_at": False,
+    },
 }
 
 # Index names expected on both drivers after full migrate (unique table constraints may substitute).
@@ -163,6 +168,7 @@ REQUIRED_INDEXES: Mapping[str, frozenset[str]] = {
     "turns": frozenset({"turns_interview_idx", "turns_question_idx"}),
     "interview_events": frozenset({"interview_events_interview_idx", "interview_events_tenant_idx"}),
     "ai_usage": frozenset({"ai_usage_provider_ts_idx", "ai_usage_tenant_ts_idx"}),
+    "proctor_logs": frozenset({"proctor_logs_interview_idx", "proctor_logs_tenant_idx"}),
     "users": frozenset({"users_tenant_idx"}),
 }
 

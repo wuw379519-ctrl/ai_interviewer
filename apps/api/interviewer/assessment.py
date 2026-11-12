@@ -86,6 +86,10 @@ def report_document(service: Service, connection: StorageSession, interview_id: 
     if audit:
         service.audit(connection, "report.viewed", interview_id, actor=actor, interview_id=interview_id)
     summary = f"本次{sum(row['score'] != 'insufficient_evidence' for row in result_dimensions)}/{len(dimensions)}个维度有原文支持。" + (f"加权分{overall}/5。" if overall is not None else "存在无证据维度，不给出总分。") + "所有分数仅辅助人类复核。"
+    from interviewer.proctoring import list_proctor_logs, score_proctor_risks
+
+    proctor_items = [item.payload() for item in score_proctor_risks(list_proctor_logs(connection, interview_id))]
+    competency_risks = [f"{row['competencyName']}：证据不足或采样差异，需人工补充核验。" for row in result_dimensions if row["score"] == "insufficient_evidence" or row["needsReview"]]
     return {"interviewId": interview_id, "reportId": str(report["id"]), "jobTitle": redact(str(service.required(connection, db.jobs, str(interview["job_id"]), "JOB_NOT_FOUND")["title"])),
             "candidateLabel": f"候选人 {str(person['id'])[:8]}", "status": str(interview["status"]), "revision": as_int(report, "revision"),
             "fixture": object_value(report["metadata"]).get("provider") == "fake", "overallScore": overall, "coverage": min(1.0, coverage),
@@ -93,7 +97,8 @@ def report_document(service: Service, connection: StorageSession, interview_id: 
             "evidence": [{"id": str(row["id"]), "turnId": str(row["turn_id"]), "turnSeq": as_int(next(turn for turn in turns if turn["id"] == row["turn_id"]), "seq"),
                           "competencyId": str(row["competency_id"]), "quote": redact(str(row["quote"]), str(person["full_name"]))} for row in evidence_rows],
             "highlights": [f"{row['competencyName']}：原文体现较完整的个人行动与验证。" for row in result_dimensions if row["score"] != "insufficient_evidence" and int(str(row["score"])) >= 4],
-            "risks": [f"{row['competencyName']}：证据不足或采样差异，需人工补充核验。" for row in result_dimensions if row["score"] == "insufficient_evidence" or row["needsReview"]],
+            "risks": competency_risks,
+            "riskItems": proctor_items,
             "nextQuestions": [f"请补充一个体现「{row['competencyName']}」的岗位案例，说明个人行动、关键取舍与可核验结果。" for row in result_dimensions],
             "recommendation": recommendation, "recommendationReason": reason, "metadata": object_value(report["metadata"]), "campus": campus,
             "revisions": [{"id": str(row["id"]), "scoreId": str(row["score_id"]), "actorId": str(row["actor_id"]),

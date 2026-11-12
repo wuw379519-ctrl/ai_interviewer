@@ -5,7 +5,7 @@ export const REALTIME_PROTOCOL_VERSION = "aii-ws-v1" as const;
 export const REALTIME_MAX_AUDIO_CHUNK_PCM_BYTES = 32000 as const;
 export const REALTIME_MAX_AUDIO_CHUNK_BASE64_CHARS = 44000 as const;
 
-export type RealtimeClientType = "auth" | "start" | "audio_chunk" | "text_input" | "end_turn" | "interrupt" | "ping" | "close";
+export type RealtimeClientType = "auth" | "start" | "audio_chunk" | "text_input" | "end_turn" | "interrupt" | "proctor_signal" | "ping" | "close";
 export type RealtimeServerType = "ready" | "question" | "partial_transcript" | "final_transcript" | "tts_chunk" | "interrupted" | "error" | "pong" | "state_changed" | "event_replay";
 
 export type RealtimeClientMessage =
@@ -15,6 +15,7 @@ export type RealtimeClientMessage =
   | { v: typeof REALTIME_PROTOCOL_VERSION; type: "text_input"; text: string; idempotencyKey: string; expectedQuestionSeq?: number }
   | { v: typeof REALTIME_PROTOCOL_VERSION; type: "end_turn"; idempotencyKey?: string }
   | { v: typeof REALTIME_PROTOCOL_VERSION; type: "interrupt" }
+  | { v: typeof REALTIME_PROTOCOL_VERSION; type: "proctor_signal"; signalType: "tab_hidden" | "window_blur" | "answer_latency" | "silence_ratio" | "volume_spike" | "speech_rate"; payload?: Record<string, unknown>; t?: number }
   | { v: typeof REALTIME_PROTOCOL_VERSION; type: "ping"; t?: number }
   | { v: typeof REALTIME_PROTOCOL_VERSION; type: "close"; reason?: string };
 
@@ -30,5 +31,5 @@ export type RealtimeServerMessage =
   | { v: typeof REALTIME_PROTOCOL_VERSION; type: "state_changed"; status: string; detail?: Record<string, unknown> }
   | { v: typeof REALTIME_PROTOCOL_VERSION; type: "event_replay"; fromSeq: number; events: Array<Record<string, unknown>> };
 
-export const REALTIME_CLIENT_TYPES: readonly RealtimeClientType[] = ["auth", "start", "audio_chunk", "text_input", "end_turn", "interrupt", "ping", "close"] as const;
+export const REALTIME_CLIENT_TYPES: readonly RealtimeClientType[] = ["auth", "start", "audio_chunk", "text_input", "end_turn", "interrupt", "proctor_signal", "ping", "close"] as const;
 export const REALTIME_SERVER_TYPES: readonly RealtimeServerType[] = ["ready", "question", "partial_transcript", "final_transcript", "tts_chunk", "interrupted", "error", "pong", "state_changed", "event_replay"] as const;

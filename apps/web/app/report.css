@@ -32,6 +32,10 @@
 .report-findings { display:grid; grid-template-columns:1fr 1fr; gap:24px; padding-top:22px; font-size:12px; }
 .report-sheet ul,.report-sheet ol { padding-left:18px; }
 .report-findings li { margin-bottom:7px; }
+.report-proctor { margin: 0 0 14px; font-size: 11px; }
+.report-proctor ul { margin: 0; }
+.report-proctor li { margin-bottom: 4px; }
+.report-proctor-empty { margin: 0 0 12px; font-size: 10px; color: #53655d; }
 .report-recommendation { border-left:3px solid #225d51; padding:12px 15px; background:#f2f6f1; font-size:12px; margin-top:14px; }
 .report-recommendation p { margin-bottom:5px; }
 .report-footer { display:flex; justify-content:space-between; gap:12px; font-size:9px; color:#53655d; border-top:1px solid #cbd7d1; margin-top:22px; padding-top:10px; overflow-wrap:anywhere; }
@@ -103,6 +107,8 @@
   .report-findings ul { margin:0; }
   .report-recommendation { margin-top:15px; padding:9px 12px; font-size:10px; }
   .report-footer { margin-top:15px; padding-top:7px; font-size:8px; }
+  .report-proctor { margin: 0 0 8px; font-size: 9px; }
+  .report-proctor-empty { display: none; }
   .report-evidence-heading { flex-direction:row; padding-bottom:8px; margin-bottom:10px; }
   .report-evidence-grid { grid-template-columns:1fr 1fr; gap:8px; }
   .report-evidence-card { padding:6px 9px; font-size:9px; line-height:1.4; break-inside:avoid; }

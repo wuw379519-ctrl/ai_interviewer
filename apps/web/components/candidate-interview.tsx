@@ -9,6 +9,7 @@ import { useInterviewDevices, deviceStatus } from "./use-interview-devices";
 import { useInterviewSpeech } from "./use-interview-speech";
 import { InterviewMediaPanel } from "./interview-media-panel";
 import { usePlaybackInterruption } from "./use-playback-interruption";
+import { useProctorSignals } from "@/lib/proctor/use-proctor-signals";
 
 const okSchema = z.object({ interviewId: z.string(), status: z.string() });
 export function CandidateInterview({ id }: { id: string }) {
@@ -23,6 +24,15 @@ export function CandidateInterview({ id }: { id: string }) {
     edge: view?.ttsServerEnabled ?? false, questionSeq: view?.questionSeq, turnSeq: view?.turns.filter((turn) => turn.role === "interviewer").at(-1)?.seq, draft, setDraft });
   const interruption = usePlaybackInterruption(devices.stream, speech.speaking, speech.stopPlayback);
   const mediaSyncing = useRef(false), lastSpoken = useRef("");
+  const proctorActive = Boolean(
+    token && view && ["interviewing", "wrapping_up"].includes(view.status) && !view.pausedAt && !withdrawn,
+  );
+  useProctorSignals({
+    interviewId: id,
+    token,
+    active: proctorActive,
+    questionSeq: view?.questionSeq,
+  });
   const needsMedia = Boolean(view && (view.cameraRequired || (view.mode === "voice" && !view.textFallback)));
   const mediaReady = !view || ((!view.cameraRequired || devices.status.cameraActive) && (view.mode !== "voice" || view.textFallback || devices.status.microphoneActive));
   const formalCampus = view?.formalText && view.recruitmentTrack === "graduate_campus";

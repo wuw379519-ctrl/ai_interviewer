@@ -325,6 +325,17 @@ class ScoreRevision(Contract):
     at: str
 
 
+class ProctorRiskItem(Contract):
+    """Structured proctoring risk — never enters scoring evidence; humans decide."""
+
+    code: str = Field(min_length=2, max_length=80)
+    severity: Literal["hint", "review"]
+    message: str = Field(min_length=4, max_length=600)
+    signal_count: int = Field(ge=0, default=0)
+    affects_score: bool = False
+    for_human_review: bool = True
+
+
 class ReportDocument(Contract):
     interview_id: Identifier
     report_id: Identifier
@@ -341,6 +352,7 @@ class ReportDocument(Contract):
     evidence: list[Evidence]
     highlights: list[str]
     risks: list[str]
+    risk_items: list[ProctorRiskItem] = Field(default_factory=list)
     next_questions: list[str]
     recommendation: Literal["strong_yes", "yes", "mixed", "no"]
     recommendation_reason: str

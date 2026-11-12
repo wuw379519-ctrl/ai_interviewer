@@ -967,3 +967,37 @@ Docker 等价思路：起一次性 Postgres 容器，设 `TEST_DATABASE_URL`/`DA
 
 **多 worker（Task 8）**：进程内 `SessionStore` 不跨 worker。多副本部署必须 **sticky session**（同 `interview_id` 粘到原 worker）或把会话登记 **外置到 Redis**（`session_id → worker` + 快照）；否则重连落到其他 worker 时无法顶替旧连接，`resumeFromSeq` 仅靠 DB 事件重放、实时 pipeline 状态丢失。
 
+## D77 Task 7：防作弊信号与 riskItems
+
+**状态**：已落地（Task 7）
+
+**设计源**：`docs/ai-interviewer-architecture.md` §3.4（防作弊）；实现以本决策 + 验收提示词为准。
+
+**采集选型**：新增 client→server WS 消息类型 `proctor_signal`（`signalType` + `payload`），不复用 `text_input`/`audio_chunk` 旁路字段——避免把遥测与作答内容混写、便于单独 ack（`state_changed` + `via=proctor_signal_ack`）。文本面试也会开轻量 WS 仅用于上报。
+
+**落库**：`proctor_logs`（PG `0015` / SQLite `0008`）：`interview_id`, `tenant_id`, `signal_type`, `payload`, `ts`。payload 经 `sanitize_metadata` 脱敏。应用层按 `current_tenant` 过滤；PG 挂 RLS。
+
+**报告字段**：在既有 `ReportDocument.risks`（胜任力证据不足文案）之外 **新增** `riskItems`（结构化过程信号项）。不改评分证据链核心逻辑；`affectsScore` 恒为 `false`，且 **无任何代码路径** 用其调 `score` / `recommendation` / 列表排序。报告 UI 仅展示，`review` 不做置顶/排序加权。
+
+**音频信号频率（防膨胀）**：`silence_ratio` / `volume_spike` **不是**每个 `audio_chunk` 写库。PCM 在 turn 缓冲，于 `RealtimePipeline` 提交作答前对整段缓冲做一次窗口聚合（`pipeline._record_audio_proctor`，约 `pipeline.py:334`）：每答一题最多 1 条 `silence_ratio`，仅当 `max_delta≥4000` 再写 1 条 `volume_spike`。客户端 `tab_hidden`/`window_blur`/`answer_latency` 按事件上报（latency 每题至多 1 次）。
+
+**单场行数预估**（15–30 分钟、约 8–13 题）：
+- 文本场：切屏/失焦 0–数十 + latency≈题数 → 通常 **≤50** 行，极端切屏也远低于千级。
+- 音频场：上式 + 每答一题 ≤2 条音频派生 → 通常 **≤80** 行。当前无按 chunk 膨胀风险；若日后改为流式按片写库，需改为固定窗口采样（另开 D）。
+
+**保留与清理**：默认面试保留 90 天。**Task 8（或后续 retention 任务）清理必须覆盖 `proctor_logs`**（随面试级联删除或按 `retained_until`/`ts` 扫除），不得长期堆积。
+
+**规则阈值（初值，待真实数据校准）**：
+
+| 规则 | 输入 | 阈值 | severity | 进证据链 |
+| --- | --- | --- | --- | --- |
+| `tab_switch_noted` / `excessive_tab_switch` | tab_hidden + window_blur 次数 | ≥1 hint；≥3 review | hint/review | 否 |
+| `answer_too_fast` | answer_latency.latencyMs | <3000ms | review | 否 |
+| `high_silence_ratio` | silence_ratio.ratio | ≥0.7 | hint | 否 |
+| `volume_spike` | volume_spike.rmsDelta | ≥4000 | hint | 否 |
+| 回答与题目矛盾 | — | TODO 未实现 | — | — |
+
+**`answer_too_fast` 3000ms 来源**：验收提示词示例阈值（拍脑袋初值），**非**现场标定、**未**做成岗位/题型可配置。后续：收集真实 latency 分布后校准；若需分轨，再以 Settings/岗位元数据开放配置（另开 D），本轮硬编码于 `proctoring/scorer.py`。
+
+**明确不做**：唇动/人脸、声纹、无关 PII；风险项自动录用/淘汰；用 riskItems 调分或改 recommendation。
+
