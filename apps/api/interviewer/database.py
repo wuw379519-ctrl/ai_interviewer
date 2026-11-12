@@ -19,7 +19,7 @@ from sqlalchemy.schema import SchemaItem
 from sqlalchemy.sql import Executable
 
 from .settings import ROOT, Settings
-from .tenancy import DEFAULT_TENANT_ID
+from .tenancy import DEFAULT_TENANT_ID, current_tenant
 
 Row = dict[str, object]
 metadata = MetaData()
@@ -243,6 +243,11 @@ def one(connection: StorageSession | Connection, entity: Table, identity: str) -
 def insert(connection: StorageSession | Connection, entity: Table, values: Mapping[str, object]) -> Row:
     identity = values.get("id", identifier())
     values = {"id": identity, **values}
+    # Stamp tenant from request context when the caller did not set one explicitly.
+    if "tenant_id" in entity.c and values.get("tenant_id") is None:
+        values["tenant_id"] = current_tenant()
+    if entity.name == "ai_usage" and "tenant" in entity.c and values.get("tenant") is None:
+        values["tenant"] = current_tenant()
     repository(connection).command(entity.insert().values(**values))
     result = one(connection, entity, str(identity))
     assert result is not None

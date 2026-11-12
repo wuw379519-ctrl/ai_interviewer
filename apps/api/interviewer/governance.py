@@ -17,6 +17,7 @@ from .contracts import CleanupInput, Object, RetentionInput
 from .errors import DomainError
 from .safety import json_hash, sanitize_metadata
 from .service import Result, object_value, strings
+from .tenancy import current_tenant
 
 if TYPE_CHECKING:
     from .service import Service
@@ -36,30 +37,37 @@ def minimized(action: str, value: object) -> Object:
 
 def preview_erasure(service: Service, connection: StorageSession, candidate_id: str) -> Object:
     person = service.required(connection, db.candidates, candidate_id, "CANDIDATE_NOT_FOUND")
-    owned = select(db.interviews.c.id).where(db.interviews.c.candidate_id == candidate_id)
+    tenant = current_tenant()
+    owned = select(db.interviews.c.id).where(and_(
+        db.interviews.c.candidate_id == candidate_id, db.interviews.c.tenant_id == tenant))
 
     def count(entity: Table, condition: object) -> int:
         return int(str(db.scalar(connection, select(func.count()).select_from(entity).where(condition))))  # type: ignore[arg-type]
     return {"candidateId": candidate_id, "label": f"候选人 {candidate_id[:8]}", "deleted": bool(person.get("erased_at")),
-            "counts": {"interviews": count(db.interviews, db.interviews.c.candidate_id == candidate_id),
-                       "resumes": count(db.resumes, db.resumes.c.candidate_id == candidate_id),
-                       "turns": count(db.turns, db.turns.c.interview_id.in_(owned)),
-                       "reports": count(db.reports, db.reports.c.interview_id.in_(owned)),
-                       "scores": count(db.scores, db.scores.c.interview_id.in_(owned)),
-                       "caches": count(db.idempotency_keys, db.idempotency_keys.c.owner_candidate_id == candidate_id)}}
+            "counts": {"interviews": count(db.interviews, and_(db.interviews.c.candidate_id == candidate_id, db.interviews.c.tenant_id == tenant)),
+                       "resumes": count(db.resumes, and_(db.resumes.c.candidate_id == candidate_id, db.resumes.c.tenant_id == tenant)),
+                       "turns": count(db.turns, and_(db.turns.c.interview_id.in_(owned), db.turns.c.tenant_id == tenant)),
+                       "reports": count(db.reports, and_(db.reports.c.interview_id.in_(owned), db.reports.c.tenant_id == tenant)),
+                       "scores": count(db.scores, and_(db.scores.c.interview_id.in_(owned), db.scores.c.tenant_id == tenant)),
+                       "caches": count(db.idempotency_keys, and_(db.idempotency_keys.c.owner_candidate_id == candidate_id, db.idempotency_keys.c.tenant_id == tenant))}}
 
 
 def erase_interviews(service: Service, connection: StorageSession, identities: list[str]) -> int:
     if not identities:
         return 0
-    found = db.rows(connection, select(db.interviews).where(db.interviews.c.id.in_(identities)))
+    tenant = current_tenant()
+    found = db.rows(connection, select(db.interviews).where(and_(
+        db.interviews.c.id.in_(identities), db.interviews.c.tenant_id == tenant)))
     identities = [str(row["id"]) for row in found]
-    for row in db.rows(connection, select(db.audit_logs).where(db.audit_logs.c.interview_id.in_(identities))):
+    for row in db.rows(connection, select(db.audit_logs).where(and_(
+            db.audit_logs.c.interview_id.in_(identities), db.audit_logs.c.tenant_id == tenant))):
         db.update(connection, db.audit_logs, str(row["id"]), metadata=minimized(str(row["action"]), row["metadata"]), ip_hash=None)
-    db.command(connection, db.idempotency_keys.update().where(db.idempotency_keys.c.owner_interview_id.in_(identities)).values(response_status=410, response_body=ERASED, status='completed', updated_at=db.now()))
-    db.command(connection, db.scores.delete().where(db.scores.c.interview_id.in_(identities)))
-    db.command(connection, db.evidence.delete().where(db.evidence.c.interview_id.in_(identities)))
-    db.command(connection, db.interviews.delete().where(db.interviews.c.id.in_(identities)))
+    db.command(connection, db.idempotency_keys.update().where(and_(
+        db.idempotency_keys.c.owner_interview_id.in_(identities), db.idempotency_keys.c.tenant_id == tenant))
+        .values(response_status=410, response_body=ERASED, status='completed', updated_at=db.now()))
+    db.command(connection, db.scores.delete().where(and_(db.scores.c.interview_id.in_(identities), db.scores.c.tenant_id == tenant)))
+    db.command(connection, db.evidence.delete().where(and_(db.evidence.c.interview_id.in_(identities), db.evidence.c.tenant_id == tenant)))
+    db.command(connection, db.interviews.delete().where(and_(db.interviews.c.id.in_(identities), db.interviews.c.tenant_id == tenant)))
     service.speech_cache = {key: value for key, value in service.speech_cache.items() if value[3] not in identities}
     return len(found)
 
@@ -68,11 +76,18 @@ def erase_candidate(service: Service, connection: StorageSession, candidate_id: 
     person = service.required(connection, db.candidates, candidate_id, "CANDIDATE_NOT_FOUND")
     if person.get("erased_at"):
         return Result({"candidateId": candidate_id, "deleted": True, "alreadyDeleted": True, "interviewsErased": 0})
-    owned = db.rows(connection, select(db.interviews).where(db.interviews.c.candidate_id == candidate_id))
+    tenant = current_tenant()
+    owned = db.rows(connection, select(db.interviews).where(and_(
+        db.interviews.c.candidate_id == candidate_id, db.interviews.c.tenant_id == tenant)))
     count = erase_interviews(service, connection, [str(row["id"]) for row in owned])
-    db.command(connection, db.resumes.delete().where(db.resumes.c.candidate_id == candidate_id))
-    db.command(connection, db.idempotency_keys.update().where(db.idempotency_keys.c.owner_candidate_id == candidate_id).values(response_status=410, response_body=ERASED, status='completed', updated_at=db.now()))
-    for row in db.rows(connection, select(db.audit_logs).where(or_(db.audit_logs.c.entity_id == candidate_id, db.audit_logs.c.actor_id == candidate_id))):
+    db.command(connection, db.resumes.delete().where(and_(
+        db.resumes.c.candidate_id == candidate_id, db.resumes.c.tenant_id == tenant)))
+    db.command(connection, db.idempotency_keys.update().where(and_(
+        db.idempotency_keys.c.owner_candidate_id == candidate_id, db.idempotency_keys.c.tenant_id == tenant))
+        .values(response_status=410, response_body=ERASED, status='completed', updated_at=db.now()))
+    for row in db.rows(connection, select(db.audit_logs).where(and_(
+            or_(db.audit_logs.c.entity_id == candidate_id, db.audit_logs.c.actor_id == candidate_id),
+            db.audit_logs.c.tenant_id == tenant))):
         db.update(connection, db.audit_logs, str(row["id"]), metadata=minimized(str(row["action"]), row["metadata"]), ip_hash=None)
     db.update(connection, db.candidates, candidate_id, full_name="已删除候选人", email=None, phone=None, source=None,
               deleted_at=person.get("deleted_at") or db.now(), erased_at=db.now())
@@ -85,9 +100,11 @@ def update_policy(service: Service, connection: StorageSession, body: RetentionI
     policy = service.policy(connection)
     if policy["revision"] != body.expected_revision:
         raise DomainError("RESOURCE_CONFLICT", "策略已更新，请刷新")
-    db.update(connection, db.data_policies, "workspace", retention_days=body.retention_days,
+    row = service.policy_row(connection)
+    db.update(connection, db.data_policies, str(row["id"]), retention_days=body.retention_days,
               revision=body.expected_revision + 1, updated_by=actor.id)
-    service.audit(connection, "retention.policy_updated", "workspace", {"old": policy, "current": service.policy(connection), "reason": body.reason}, actor)
+    service.audit(connection, "retention.policy_updated", str(row["id"]),
+                  {"old": policy, "current": service.policy(connection), "reason": body.reason}, actor)
     return Result(service.policy(connection))
 
 
@@ -95,13 +112,14 @@ def cleanup_selection(service: Service, connection: StorageSession, cutoff: obje
     at = db.utc(cutoff) if cutoff is not None else db.now()
     if at > db.now():
         raise DomainError("VALIDATION_FAILED", "清理截止时间不能在未来")
+    tenant = current_tenant()
     selected: dict[str, list[str]] = {}
     has_more = False
     conditions = [
-        ("candidateIds", db.candidates, and_(db.candidates.c.erased_at.is_(None), or_(db.candidates.c.retained_until <= at, db.candidates.c.deleted_at.is_not(None))), 25),
-        ("interviewIds", db.interviews, db.interviews.c.retained_until <= at, 25),
-        ("cacheIds", db.idempotency_keys, db.idempotency_keys.c.expires_at <= at, 200),
-        ("auditIds", db.audit_logs, db.audit_logs.c.created_at <= at - timedelta(days=90), 100),
+        ("candidateIds", db.candidates, and_(db.candidates.c.tenant_id == tenant, db.candidates.c.erased_at.is_(None), or_(db.candidates.c.retained_until <= at, db.candidates.c.deleted_at.is_not(None))), 25),
+        ("interviewIds", db.interviews, and_(db.interviews.c.tenant_id == tenant, db.interviews.c.retained_until <= at), 25),
+        ("cacheIds", db.idempotency_keys, and_(db.idempotency_keys.c.tenant_id == tenant, db.idempotency_keys.c.expires_at <= at), 200),
+        ("auditIds", db.audit_logs, and_(db.audit_logs.c.tenant_id == tenant, db.audit_logs.c.created_at <= at - timedelta(days=90)), 100),
     ]
     for key, entity, condition, limit in conditions:
         statement = select(entity.c.id).where(condition)
@@ -156,7 +174,10 @@ def run_cleanup(service: Service, connection: StorageSession, body: CleanupInput
 
 
 def candidates_page(service: Service, connection: StorageSession, before: str | None) -> Object:
-    statement = select(db.candidates, db.jobs.c.title).join(db.jobs, db.jobs.c.id == db.candidates.c.job_id)
+    tenant = current_tenant()
+    statement = (select(db.candidates, db.jobs.c.title)
+                 .join(db.jobs, db.jobs.c.id == db.candidates.c.job_id)
+                 .where(and_(db.candidates.c.tenant_id == tenant, db.jobs.c.tenant_id == tenant)))
     if before:
         cursor = service.required(connection, db.candidates, before, "VALIDATION_FAILED")
         statement = statement.where(or_(db.candidates.c.created_at < cursor["created_at"], and_(db.candidates.c.created_at == cursor["created_at"], db.candidates.c.id < before)))
@@ -168,7 +189,7 @@ def candidates_page(service: Service, connection: StorageSession, before: str | 
 
 def audit_page(service: Service, connection: StorageSession, actor: Actor, before: str | None,
                action: str | None, interview_id: str | None, limit: int) -> Object:
-    statement = select(db.audit_logs)
+    statement = select(db.audit_logs).where(db.audit_logs.c.tenant_id == current_tenant())
     if before:
         cursor = service.required(connection, db.audit_logs, before, "VALIDATION_FAILED")
         statement = statement.where(or_(db.audit_logs.c.created_at < cursor["created_at"], and_(db.audit_logs.c.created_at == cursor["created_at"], db.audit_logs.c.id < before)))

@@ -10,19 +10,23 @@ from .errors import DomainError
 from .repository import StorageSession
 from .safety import redact
 from .service import Service, as_int
+from .tenancy import current_tenant
 
 PAGE_SIZE = 25
 
 
 def retained_records() -> Select[tuple[object, ...]]:
     now = db.now()
+    tenant = current_tenant()
     return (
         select(db.interviews.c.id, db.interviews.c.created_at, db.interviews.c.started_at,
                db.interviews.c.finished_at, db.interviews.c.retained_until, db.interviews.c.status,
                db.interviews.c.mode, db.jobs.c.title, db.candidates.c.full_name)
         .join(db.jobs, db.jobs.c.id == db.interviews.c.job_id)
         .join(db.candidates, db.candidates.c.id == db.interviews.c.candidate_id)
-        .where(db.interviews.c.retained_until > now, db.candidates.c.retained_until > now,
+        .where(db.interviews.c.tenant_id == tenant, db.jobs.c.tenant_id == tenant,
+               db.candidates.c.tenant_id == tenant,
+               db.interviews.c.retained_until > now, db.candidates.c.retained_until > now,
                db.candidates.c.deleted_at.is_(None))
     )
 
@@ -54,6 +58,7 @@ def detail(service: Service, connection: StorageSession, identity: str, actor: A
     row = rows[0]
     consented = row["status"] != "cancelled" and db.exists(
         connection, select(db.consents.c.id).where(db.consents.c.interview_id == identity,
+                                                   db.consents.c.tenant_id == current_tenant(),
                                                    db.consents.c.revoked_at.is_(None),
                                                    db.consents.c.consent_version != "",
                                                    db.consents.c.consent_text_hash != ""))

@@ -25,6 +25,7 @@ from .domain import (FOLLOWUP_TEXT, FORMAL_CAMPUS_PLAN, FORMAL_TEXT_PLANS, INJEC
 from .errors import DomainError
 from .safety import consent, guard_output, json_hash, redact, safe_question, sanitize_metadata, sanitize_profile
 from .settings import Settings
+from .tenancy import current_tenant, ensure_tenant_row, set_current_tenant
 
 if TYPE_CHECKING:
     from .local_whisper import LocalWhisper
@@ -86,8 +87,8 @@ class Service:
 
     def required(self, connection: StorageSession, entity: Table, identity: str, code: str) -> db.Row:
         row = db.one(connection, entity, identity)
-        if row is None:
-            raise DomainError(code, "请求的资料不存在")
+        ensure_tenant_row(row, code)
+        assert row is not None
         return row
 
     def candidate(self, connection: StorageSession, identity: str) -> db.Row:
@@ -101,14 +102,18 @@ class Service:
         self.candidate(connection, str(row["candidate_id"]))
         if db.utc(row["retained_until"]) <= db.now() or row["status"] == "cancelled":
             raise DomainError("INTERVIEW_CLOSED", "面试已撤回或到期")
-        if check_consent and not db.rows(connection, select(db.consents).where(and_(db.consents.c.interview_id == identity, db.consents.c.revoked_at.is_(None), db.consents.c.consent_version != "", db.consents.c.consent_text_hash != ""))):
+        if check_consent and not db.rows(connection, select(db.consents).where(and_(
+                db.consents.c.interview_id == identity, db.consents.c.tenant_id == current_tenant(),
+                db.consents.c.revoked_at.is_(None), db.consents.c.consent_version != "",
+                db.consents.c.consent_text_hash != ""))):
             raise DomainError("CONSENT_REQUIRED", "请先完成本场知情同意")
         return row
 
     def current_consent(self, connection: StorageSession, row: db.Row) -> db.Row | None:
         version, _ = self.consent_text(row)
-        found = db.rows(connection, select(db.consents).where(and_(db.consents.c.interview_id == row["id"],
-                          db.consents.c.consent_version == version, db.consents.c.revoked_at.is_(None))))
+        found = db.rows(connection, select(db.consents).where(and_(
+            db.consents.c.interview_id == row["id"], db.consents.c.tenant_id == current_tenant(),
+            db.consents.c.consent_version == version, db.consents.c.revoked_at.is_(None))))
         return found[0] if found else None
 
     def consent_text(self, row: db.Row) -> tuple[str, str]:
@@ -129,6 +134,9 @@ class Service:
         if not token or len(token) > 256 or not row or not row.get("invite_token_hash") or not hmac.compare_digest(
                 hashlib.sha256(token.encode()).hexdigest(), str(row["invite_token_hash"])):
             raise DomainError("UNAUTHORIZED", "请使用完整的专属邀请链接")
+        # Invite token proves access; bind tenant from the interview before scoped lookups.
+        if row.get("tenant_id"):
+            set_current_tenant(str(row["tenant_id"]))
         try:
             self.interview(connection, identity)
             if not row.get("invite_expires_at") or db.utc(row["invite_expires_at"]) <= db.now():
@@ -168,7 +176,9 @@ class Service:
             payload.pop("expectedQuestionSeq")
         fingerprint = json_hash(payload)
         if key:
-            existing = db.rows(connection, select(db.idempotency_keys).where(and_(db.idempotency_keys.c.scope == scope, db.idempotency_keys.c.key == key)))
+            existing = db.rows(connection, select(db.idempotency_keys).where(and_(
+                db.idempotency_keys.c.scope == scope, db.idempotency_keys.c.key == key,
+                db.idempotency_keys.c.tenant_id == current_tenant())))
             if existing:
                 row = existing[0]
                 if db.utc(row["expires_at"]) <= db.now():
@@ -198,17 +208,31 @@ class Service:
                       "owner_interview_id": interview_id})
         return result
 
+    def policy_row(self, connection: StorageSession) -> db.Row:
+        found = db.rows(
+            connection,
+            select(db.data_policies).where(db.data_policies.c.tenant_id == current_tenant()).limit(1),
+        )
+        if not found:
+            raise DomainError("NOT_READY", "请求的资料不存在")
+        return found[0]
+
     def policy(self, connection: StorageSession) -> Object:
-        row = self.required(connection, db.data_policies, "workspace", "NOT_READY")
+        row = self.policy_row(connection)
         return {"retentionDays": as_int(row, "retention_days"), "revision": as_int(row, "revision")}
 
     def dashboard(self, connection: StorageSession) -> Object:
-        job_rows = db.rows(connection, select(db.jobs).order_by(db.jobs.c.created_at.desc()).limit(100))
+        tenant = current_tenant()
+        job_rows = db.rows(connection, select(db.jobs).where(db.jobs.c.tenant_id == tenant)
+                           .order_by(db.jobs.c.created_at.desc()).limit(100))
         interview_rows = db.rows(connection, select(db.interviews.c.id, db.interviews.c.status,
                          db.interviews.c.duration_minutes, db.jobs.c.title, db.candidates.c.full_name)
                          .join(db.jobs, db.jobs.c.id == db.interviews.c.job_id)
                          .join(db.candidates, db.candidates.c.id == db.interviews.c.candidate_id)
-                         .where(and_(db.candidates.c.deleted_at.is_(None), db.candidates.c.retained_until > db.now(),
+                         .where(and_(db.interviews.c.tenant_id == tenant,
+                                     db.jobs.c.tenant_id == tenant,
+                                     db.candidates.c.tenant_id == tenant,
+                                     db.candidates.c.deleted_at.is_(None), db.candidates.c.retained_until > db.now(),
                                      db.interviews.c.retained_until > db.now())).order_by(db.interviews.c.created_at.desc()).limit(20))
         return {"policy": self.policy(connection), "jobs": [{"id": str(row["id"]), "title": str(row["title"]), "status": str(row["status"])} for row in job_rows],
                 "interviews": [{"id": str(row["id"]), "title": str(row["title"]), "candidateName": str(row["full_name"]),
@@ -222,15 +246,19 @@ class Service:
     def dimensions(self, connection: StorageSession, job_id: str) -> list[Object]:
         return [{"id": str(row["id"]), "name": str(row["name"]), "description": str(row["description"]),
                  "weight": as_int(row, "weight_bp") / 10000, "bars": object_value({"rows": row["bars_anchors"]})["rows"]}
-                for row in db.rows(connection, select(db.competencies).where(db.competencies.c.job_id == job_id).order_by(db.competencies.c.order_index))]
+                for row in db.rows(connection, select(db.competencies).where(and_(
+                    db.competencies.c.job_id == job_id, db.competencies.c.tenant_id == current_tenant()))
+                    .order_by(db.competencies.c.order_index))]
 
     def save_competencies(self, connection: StorageSession, job_id: str, body: CompetencySet,
                           confirmed: bool, actor: Actor) -> Object:
         self.required(connection, db.jobs, job_id, "JOB_NOT_FOUND")
-        if db.scalar(connection, select(func.count()).select_from(db.interviews).where(db.interviews.c.job_id == job_id)):
+        if db.scalar(connection, select(func.count()).select_from(db.interviews).where(and_(
+                db.interviews.c.job_id == job_id, db.interviews.c.tenant_id == current_tenant()))):
             raise DomainError("RESOURCE_CONFLICT", "岗位已有面试，评估标准已冻结")
         validate_competencies(body)
-        db.command(connection, db.competencies.delete().where(db.competencies.c.job_id == job_id))
+        db.command(connection, db.competencies.delete().where(and_(
+            db.competencies.c.job_id == job_id, db.competencies.c.tenant_id == current_tenant())))
         for index, dimension in enumerate(body.competencies):
             db.insert(connection, db.competencies, {"job_id": job_id, "name": dimension.name,
                       "description": dimension.description, "weight_bp": round(dimension.weight * 10000),
@@ -282,7 +310,9 @@ class Service:
     def create_interview(self, connection: StorageSession, body: InterviewCreate, actor: Actor) -> Result:
         person = self.candidate(connection, body.candidate_id)
         job = self.required(connection, db.jobs, body.job_id, "JOB_NOT_FOUND")
-        confirmed = db.rows(connection, select(db.competencies).where(and_(db.competencies.c.job_id == body.job_id, db.competencies.c.status == "confirmed")))
+        confirmed = db.rows(connection, select(db.competencies).where(and_(
+            db.competencies.c.job_id == body.job_id, db.competencies.c.status == "confirmed",
+            db.competencies.c.tenant_id == current_tenant())))
         if person["job_id"] != body.job_id or not 4 <= len(confirmed) <= 6:
             raise DomainError("COMPETENCY_NOT_CONFIRMED", "候选人须属于本岗位，且标准已确认")
         dimensions = self.dimensions(connection, body.job_id)
@@ -290,10 +320,13 @@ class Service:
         reusable = db.rows(connection, select(db.interviews).where(and_(db.interviews.c.job_id == body.job_id,
                            db.interviews.c.duration_minutes == body.duration_minutes,
                            db.interviews.c.recruitment_track == job["recruitment_track"],
+                           db.interviews.c.tenant_id == current_tenant(),
                            db.interviews.c.plan_version.not_in(FORMAL_TEXT_PLANS)))
                            .order_by(db.interviews.c.created_at).limit(1))
         if reusable:
-            original = db.rows(connection, select(db.questions).where(db.questions.c.interview_id == reusable[0]["id"]).order_by(db.questions.c.seq))
+            original = db.rows(connection, select(db.questions).where(and_(
+                db.questions.c.interview_id == reusable[0]["id"],
+                db.questions.c.tenant_id == current_tenant())).order_by(db.questions.c.seq))
             if original:
                 version = str(reusable[0]["plan_version"])
                 plan = [{"competencyId": str(saved["competency_id"]), "prompt": str(saved["prompt"]),
@@ -335,14 +368,19 @@ class Service:
                        "reusedPlan": reused, "sealedToken": self.auth.seal(token), "inviteExpiresAt": db.iso(row["invite_expires_at"])}, 201)
 
     def question_rows(self, connection: StorageSession, interview_id: str) -> list[db.Row]:
-        return db.rows(connection, select(db.questions).where(db.questions.c.interview_id == interview_id).order_by(db.questions.c.seq))
+        return db.rows(connection, select(db.questions).where(and_(
+            db.questions.c.interview_id == interview_id, db.questions.c.tenant_id == current_tenant()))
+            .order_by(db.questions.c.seq))
 
     def turn_rows(self, connection: StorageSession, interview_id: str) -> list[db.Row]:
-        return db.rows(connection, select(db.turns).where(db.turns.c.interview_id == interview_id).order_by(db.turns.c.seq))
+        return db.rows(connection, select(db.turns).where(and_(
+            db.turns.c.interview_id == interview_id, db.turns.c.tenant_id == current_tenant()))
+            .order_by(db.turns.c.seq))
 
     def append(self, connection: StorageSession, interview_id: str, question_id: str | None, role: str,
                text: str, followup: bool = False) -> db.Row:
-        seq = int(str(db.scalar(connection, select(func.coalesce(func.max(db.turns.c.seq), 0)).where(db.turns.c.interview_id == interview_id)))) + 1
+        seq = int(str(db.scalar(connection, select(func.coalesce(func.max(db.turns.c.seq), 0)).where(and_(
+            db.turns.c.interview_id == interview_id, db.turns.c.tenant_id == current_tenant()))))) + 1
         return db.insert(connection, db.turns, {"interview_id": interview_id, "question_id": question_id,
                                               "seq": seq, "role": role, "content": text, "is_followup": followup})
 

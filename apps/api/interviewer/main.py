@@ -33,6 +33,7 @@ from .modules.practice.router import mount_practice
 from .operations import Operations
 from .service import Result, Service
 from .settings import Settings
+from .tenancy import DEFAULT_TENANT_ID, get_current_tenant, reset_current_tenant, set_current_tenant
 
 
 def create_app(configuration: Settings | None = None) -> FastAPI:
@@ -101,11 +102,14 @@ def create_app(configuration: Settings | None = None) -> FastAPI:
                 identity = str(UUID(matched[1]))
             except ValueError as error:
                 raise DomainError("UNAUTHORIZED", "邀请链接无效") from error
+            tenant_id = DEFAULT_TENANT_ID
             with database.unit_of_work() as connection:
-                service.candidate_access(connection, request, identity, matched[2] in {"turns", "transcribe"})
+                invited = service.candidate_access(
+                    connection, request, identity, matched[2] in {"turns", "transcribe"})
+                tenant_id = str(invited.get("tenant_id") or DEFAULT_TENANT_ID)
                 if matched[2] not in {"state", "consent", "withdraw"}:
                     service.interview(connection, identity, True)
-            request.state.actor = Actor("candidate", identity, "候选人")
+            request.state.actor = Actor("candidate", identity, "候选人", tenant_id)
             return
         admin = path.startswith("/api/admin/") or re.fullmatch(r"/api/candidates/[^/]+", path) and request.method in {"GET", "DELETE"}
         request.state.actor = service.auth.role(request, "admin" if admin else "recruiter")
@@ -113,15 +117,21 @@ def create_app(configuration: Settings | None = None) -> FastAPI:
     @app.middleware("http")
     async def admission_and_metrics(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         identity, started = str(uuid4()), time.perf_counter()
+        tenant_token = None
         try:
             # Authentication and versioned-consent admission precede body parsing/reading.
             await run_in_threadpool(admit, request)
+            # Bind tenant in this request context (not client-supplied) for all scoped queries.
+            tenant_token = set_current_tenant(get_current_tenant(request))
             response = await call_next(request)
         except DomainError as error:
             response = send(Result(error.payload(), error.status))
         except Exception as error:
             logging.getLogger("interviewer").error("request_failed type=%s", type(error).__name__)
             response = send(Result(DomainError("INTERNAL_ERROR", "服务内部错误").payload(), 500))
+        finally:
+            if tenant_token is not None:
+                reset_current_tenant(tenant_token)
         elapsed = max(0, round((time.perf_counter() - started) * 1000))
         path = request.url.path
         operation = "plan" if path in {"/api/interviews", "/api/formal-interviews"} and request.method == "POST" else ""

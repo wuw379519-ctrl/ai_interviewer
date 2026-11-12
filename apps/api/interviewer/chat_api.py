@@ -134,7 +134,11 @@ class PracticeChat:
                                      "对话最多可访问90天，你可以随时删除。请勿提交真实招聘资料或联系方式。")
 
     def _row(self, connection: StorageSession, digest: str) -> db.Row | None:
-        rows = db.rows(connection, select(db.practice_sessions).where(db.practice_sessions.c.token_hash == digest))
+        from .tenancy import current_tenant
+        rows = db.rows(connection, select(db.practice_sessions).where(
+            db.practice_sessions.c.token_hash == digest,
+            db.practice_sessions.c.tenant_id == current_tenant(),
+        ))
         return rows[0] if rows else None
 
     def _session(self, connection: StorageSession, digest: str) -> db.Row:

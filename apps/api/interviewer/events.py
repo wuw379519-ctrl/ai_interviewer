@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from . import database as db
 from .contracts import Object
 from .repository import StorageSession
+from .tenancy import current_tenant
 
 EventType = Literal[
     "state_changed",
@@ -30,7 +31,8 @@ def next_seq(connection: StorageSession, interview_id: str) -> int:
     current = db.scalar(
         connection,
         select(func.coalesce(func.max(db.interview_events.c.seq), 0)).where(
-            db.interview_events.c.interview_id == interview_id
+            db.interview_events.c.interview_id == interview_id,
+            db.interview_events.c.tenant_id == current_tenant(),
         ),
     )
     return int(str(current or 0)) + 1
@@ -62,7 +64,10 @@ def list_events(connection: StorageSession, interview_id: str) -> list[Object]:
     rows = db.rows(
         connection,
         select(db.interview_events)
-        .where(db.interview_events.c.interview_id == interview_id)
+        .where(
+            db.interview_events.c.interview_id == interview_id,
+            db.interview_events.c.tenant_id == current_tenant(),
+        )
         .order_by(db.interview_events.c.seq.asc()),
     )
     return [
