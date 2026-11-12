@@ -373,6 +373,23 @@ class Database:
                 connection.execute(text("INSERT INTO __migrations(id,checksum) VALUES (:id,:checksum)"),
                                    {"id": file.name, "checksum": checksum})
 
+    def rls_role_is_safe(self) -> tuple[bool, str]:
+        """Return (ok, detail). SQLite has no RLS → ok. PG SUPERUSER/BYPASSRLS → not ok."""
+        if not self.postgres:
+            return True, "sqlite"
+        with self.engine.connect() as connection:
+            row = connection.execute(text(
+                "SELECT current_user AS rolname, rolsuper, rolbypassrls "
+                "FROM pg_roles WHERE rolname = current_user"
+            )).mappings().one()
+            name = str(row["rolname"])
+            if bool(row["rolsuper"]) or bool(row["rolbypassrls"]):
+                return False, (
+                    f"role={name} super={bool(row['rolsuper'])} bypassrls={bool(row['rolbypassrls'])}; "
+                    "use NOSUPERUSER NOBYPASSRLS for DATABASE_URL or RLS is ineffective"
+                )
+            return True, f"role={name}"
+
     def close(self) -> None:
         self.engine.dispose()
 

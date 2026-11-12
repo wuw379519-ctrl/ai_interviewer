@@ -883,4 +883,12 @@ Docker 等价思路：起一次性 Postgres 容器，设 `TEST_DATABASE_URL`/`DA
 
 **已知限制**：SQLite 仅应用层隔离；熔断与租户 ContextVar 均为进程内；`data_policies` 单例尚未 per-tenant 化；多 worker 下 ContextVar 不跨进程。
 
+
+**`users` / `role_bindings` 结构（表，非 JSON 列）**：`users(id, tenant_id, external_key, display_name, status, created_at, updated_at)`，唯一 `(tenant_id, external_key)`；`role_bindings(id, user_id → users.id, tenant_id → tenants.id, role ∈ {admin,recruiter}, created_at, updated_at)`，唯一 `(user_id, tenant_id, role)`。当前 HTTP 会话仍由 cookie/API key 签发 `Actor`，未读这两张表；Task 6 WS 鉴权可挂到 `role_bindings`。
+
+**部署红线（Task 6 前置阻塞）**：生产 `DATABASE_URL` 必须 `NOSUPERUSER NOBYPASSRLS`，否则 RLS 静默失效。收尾补丁：`Database.rls_role_is_safe()`（`database.py`）；lifespan 校验——production **拒绝启动**，非 production 允许起服但 `/api/ready` → `NOT_READY` / `POSTGRES_RLS_ROLE_BYPASS`（`modules/operations/router.py`）。WS 长连接复用池连接前必须满足本条。
+
+**非 default 租户主流程**：隔离（列表/404）已完成；因 `data_policies` 仍为 default 上 `id='workspace'` 单例，非 default 调用 `policy()`（建候选人 / 邀约保留期等）→ **`NOT_READY`（HTTP 503）**，完整 fake 面试主流程不可用。per-tenant `data_policies` 留给后续任务，不在本收尾改迁移。
+
+**OpenAPI**：paths=44，与 Task 5 后一致，本任务无端点增删。
 **无新依赖**。回退：按 commit 逆序 revert；已应用的 `0013`/`0014`/`0007` 行保留。

@@ -47,6 +47,16 @@ def create_app(configuration: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         await run_in_threadpool(database.migrate)
+        ok, detail = await run_in_threadpool(database.rls_role_is_safe)
+        _app.state.rls_role_ok = ok
+        _app.state.rls_role_detail = detail
+        if not ok:
+            logging.getLogger("interviewer").warning("postgres_rls_role_unsafe %s", detail)
+            if settings.environment == "production":
+                raise RuntimeError(
+                    "拒绝启动：生产 DATABASE_URL 角色为 SUPERUSER 或 BYPASSRLS，RLS 无效。"
+                    f" {detail}"
+                )
         try:
             if settings.stt_provider == "whisper":
                 await run_in_threadpool(service.whisper.load)
@@ -64,6 +74,8 @@ def create_app(configuration: Settings | None = None) -> FastAPI:
     app.state.feishu = LiveFeishu(settings) if feishu.feishu_configured(settings) else FakeFeishu()
     app.state.operations = operations
     app.state.instance_id = instance_id
+    app.state.rls_role_ok = True
+    app.state.rls_role_detail = "sqlite"
 
     # Registration order matches the pre-split app so OpenAPI path order stays stable.
     mount_practice(app, practice)

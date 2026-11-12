@@ -33,6 +33,13 @@ def build_router() -> APIRouter:
         issues = settings.deployment_issues()
         if issues:
             raise DomainError("NOT_READY", "部署配置尚未就绪", {"issues": issues})
+        if database.postgres and not bool(getattr(request.app.state, "rls_role_ok", True)):
+            detail = str(getattr(request.app.state, "rls_role_detail", "") or "")
+            raise DomainError(
+                "NOT_READY",
+                "Postgres 角色会绕过 RLS（须 NOSUPERUSER NOBYPASSRLS）",
+                {"issues": ["POSTGRES_RLS_ROLE_BYPASS"], "detail": detail},
+            )
         try:
             with database.unit_of_work() as connection:
                 service.policy(connection)
