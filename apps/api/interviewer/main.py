@@ -31,6 +31,7 @@ from .modules.jobs.router import build_router as build_jobs_router
 from .modules.operations.router import build_router as build_operations_router
 from .modules.practice.router import mount_practice
 from .operations import Operations
+from .realtime import SessionStore, build_realtime_router
 from .service import Result, Service
 from .settings import Settings
 from .tenancy import DEFAULT_TENANT_ID, get_current_tenant, reset_current_tenant, set_current_tenant
@@ -76,6 +77,8 @@ def create_app(configuration: Settings | None = None) -> FastAPI:
     app.state.instance_id = instance_id
     app.state.rls_role_ok = True
     app.state.rls_role_detail = "sqlite"
+    session_store = SessionStore()
+    app.state.session_store = session_store
 
     # Registration order matches the pre-split app so OpenAPI path order stays stable.
     mount_practice(app, practice)
@@ -88,9 +91,13 @@ def create_app(configuration: Settings | None = None) -> FastAPI:
     app.include_router(build_interviews_router())
     app.include_router(build_assessment_router())
     app.include_router(build_admin_router())
+    app.include_router(build_realtime_router(session_store))
 
     def admit(request: Request) -> None:
         path = request.url.path
+        if path.startswith("/ws/"):
+            # WebSocket authenticates inside the handler (invite token); do not use HTTP admit.
+            return
         if path in {CHAT_PATH, SESSION_PATH}:
             practice.admit(request)
             return

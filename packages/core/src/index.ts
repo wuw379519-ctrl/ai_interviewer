@@ -10,6 +10,7 @@ export * from "./conversation";
 export * from "./consent";
 export * from "./intake";
 export * from "./transport";
+export * from "./realtime-protocol";
 export * from "./media";
 export * from "./audio";
 export * from "./interruption";

@@ -892,3 +892,31 @@ Docker 等价思路：起一次性 Postgres 容器，设 `TEST_DATABASE_URL`/`DA
 
 **OpenAPI**：paths=44，与 Task 5 后一致，本任务无端点增删。
 **无新依赖**。回退：按 commit 逆序 revert；已应用的 `0013`/`0014`/`0007` 行保留。
+
+## D73 Task 6a：Gateway Protocol 保持双轨 C（async 表面 / sync 实现）
+
+**状态**：已裁决（Task 6a 开工前）
+
+**背景**：D71 倾向 C（双 Protocol：Gateway 暴露 async、内部调 sync），标记待决。WS 实时路径需要先定调用形态，不能拖到 7b。
+
+**决策**：确认 **C**。`realtime/` 与未来 pipeline 以 async 调用 Gateway 表面；现有 REST/SSE 继续使用同步 `structured` / `stream` / `transcribe` / `synthesize`。6a 不引入第二套供应商 SDK，不把全部 Protocol 改成 async（否决 B），也不在每个 WS 调用点散落 `run_in_executor`（否决作为主方案的 A；executor 可作 C 的内部实现细节）。
+
+**理由**：避免 6a 大爆炸改签；REST 门禁与现有测试保持稳定；与架构 §3.3 async 流式目标对齐且可渐进落地。
+
+**回退**：若 7b 实测双轨成本过高，再评估收敛为单一 async Protocol（另开 D）。
+
+## D74 Task 6a：每面试仅一个活动写 WS；重连顶替旧连接
+
+**状态**：已裁决（session_store 设计约束）
+
+**背景**：Task 3 事件 seq 为单写入串行 + `MAX(seq)+1`，唯一约束 `(interview_id, seq)` 兜底。WS 可能多端/重连并发写。
+
+**决策**：
+- **不允许**同一 `interview_id` 同时存在多个活动写连接。
+- 新的已认证连接 **顶替** 旧连接：旧 socket 以 close code `4000`（superseded）关闭。
+- seq 仍走 `events.append_event`（进程内 per-interview 会话互斥 + DB 唯一约束）；6a 骨架不新增 DB 序列对象。
+- 不提供只读观察连接（后续若需要另开 D）。
+
+**理由**：保住事件单调序与断线恢复语义；重连是主路径，顶替优于 409 拒绝（否则刷新页无法恢复）。
+
+**回退**：改为拒绝第二连接（409）只需改 `SessionStore.attach`，协议消息不变。
