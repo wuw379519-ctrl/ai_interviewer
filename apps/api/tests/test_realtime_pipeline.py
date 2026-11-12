@@ -120,6 +120,61 @@ def test_energy_vad_onset_on_loud_tone() -> None:
     assert decision.speech_active
 
 
+def test_short_noise_and_silence_do_not_trigger_onset() -> None:
+    """onset_ms debounce: bursts shorter than onset, and quiet frames, never just_started."""
+    vad = EnergyVad(VadConfig(energy_threshold=500.0, onset_ms=80, cooldown_ms=300))
+    short = sine_pcm16le(duration_ms=20, amplitude=12000)
+    quiet = sine_pcm16le(duration_ms=100, amplitude=10)
+    assert not vad.push(short).just_started
+    assert not vad.push(quiet).just_started
+    # Still below onset after another short burst (not accumulated across silence).
+    assert not vad.push(short).just_started
+
+
+def test_vad_cooldown_suppresses_immediate_reonset() -> None:
+    vad = EnergyVad(VadConfig(energy_threshold=500.0, onset_ms=40, cooldown_ms=200))
+    loud = sine_pcm16le(duration_ms=80, amplitude=9000)
+    assert vad.push(loud).just_started
+    vad.arm_cooldown()
+    # Loud energy during cooldown must not re-fire just_started.
+    assert not vad.push(loud).just_started
+    # After cooldown window elapses (200ms of frames), onset works again.
+    pad = sine_pcm16le(duration_ms=220, amplitude=10)
+    vad.push(pad)
+    assert vad.push(loud).just_started
+
+
+def test_short_noise_does_not_emit_interrupted_while_tts_playing(tmp_path: Path) -> None:
+    """Pipeline: sub-onset loud chunk during TTS must not send interrupted."""
+    with _app_client(tmp_path) as client:
+        interview_id, token, _ = _seed_interviewing(client)
+        client.app.state.service.gateway.tts = FakeTTS(delay_ms=1.0, payload=b"\x00\x01" * 8000)
+        with client.websocket_connect(f"/ws/interview/{interview_id}") as ws:
+            _auth(ws, token)
+            live = client.app.state.session_store.get(interview_id)
+            assert live and live.pipeline and live.pipeline.player
+            live.pipeline.player.chunk_delay_ms = 40.0
+            ws.send_text(json.dumps({
+                "v": "aii-ws-v1",
+                "type": "text_input",
+                "text": "我主导了实验模块，个人负责实现，将耗时降低30%。",
+                "idempotencyKey": "ws-noise-" + uuid4().hex,
+            }))
+            _drain_until(ws, "tts_chunk")
+            short = sine_pcm16le(duration_ms=20, amplitude=12000)
+            ws.send_text(json.dumps({
+                "v": "aii-ws-v1",
+                "type": "audio_chunk",
+                "seq": 1,
+                "pcmBase64": base64.b64encode(short).decode("ascii"),
+            }))
+            # Drain a few follow-up tts_chunk / state messages; interrupted must not appear.
+            for _ in range(8):
+                msg = json.loads(ws.receive_text())
+                assert msg["type"] != "interrupted", msg
+            assert live.pipeline.last_interrupt is None
+
+
 def test_pipeline_text_input_to_question_and_tts(tmp_path: Path) -> None:
     with _app_client(tmp_path) as client:
         interview_id, token, _ = _seed_interviewing(client)

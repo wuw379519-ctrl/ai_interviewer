@@ -955,3 +955,15 @@ Docker 等价思路：起一次性 Postgres 容器，设 `TEST_DATABASE_URL`/`DA
 **延迟**：fake ASR/TTS 打点见 `docs/acceptance/task6b-realtime-latency.md`；入口 `scripts/measure_realtime_latency.py`。
 
 **回退**：关闭 WS pipeline 处理，保留 6a ack 骨架与 SSE 降级。
+
+### 6b 收尾：VAD 防抖 / 误触发 / 多 worker
+
+**防抖参数**（`VadConfig`，算法仍为能量 RMS）：
+- `onset_ms=80`：连续高能量最短时长才 `just_started`（短噪声不触发）
+- `hangover_ms=200`：低能量持续后结束 speech_active
+- `cooldown_ms=300`：`arm_cooldown()`（barge-in 后）窗口内忽略新 onset
+
+**误触发风险**：环境噪声、键盘、回声可能越过阈值；当前无频谱/语音活动模型。后续可选：双阈值（进入/退出）、或 Whisper/Silero 类端点检测（另开 D，并保持测试可注入 fake）。
+
+**多 worker（Task 8）**：进程内 `SessionStore` 不跨 worker。多副本部署必须 **sticky session**（同 `interview_id` 粘到原 worker）或把会话登记 **外置到 Redis**（`session_id → worker` + 快照）；否则重连落到其他 worker 时无法顶替旧连接，`resumeFromSeq` 仅靠 DB 事件重放、实时 pipeline 状态丢失。
+

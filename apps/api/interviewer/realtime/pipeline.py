@@ -181,7 +181,8 @@ class RealtimePipeline:
         )
         sent = time.perf_counter()
         self.last_interrupt = InterruptTiming(vad_onset_mono=onset_mono, interrupted_sent_mono=sent)
-        self.vad.reset()
+        # Debounce: suppress immediate re-onset from echo/noise after barge-in.
+        self.vad.arm_cooldown()
 
     def _spawn_turn(
         self,
