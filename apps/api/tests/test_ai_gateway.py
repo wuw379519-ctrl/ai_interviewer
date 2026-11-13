@@ -20,15 +20,24 @@ from interviewer.settings import Settings
 T = TypeVar("T", bound=Contract)
 
 ROOT = Path(__file__).resolve().parents[3]
-BUSINESS_DIRS = (
-    ROOT / "apps" / "api" / "interviewer" / "service.py",
-    ROOT / "apps" / "api" / "interviewer" / "assessment.py",
-    ROOT / "apps" / "api" / "interviewer" / "speech.py",
-    ROOT / "apps" / "api" / "interviewer" / "formal.py",
-    ROOT / "apps" / "api" / "interviewer" / "governance.py",
-    ROOT / "apps" / "api" / "interviewer" / "records.py",
-    ROOT / "apps" / "api" / "interviewer" / "modules",
-)
+INTERVIEWER_ROOT = ROOT / "apps" / "api" / "interviewer"
+
+# Full-tree scan (Task 8b). Whitelist = explicit relative paths under interviewer/ with reasons.
+# Do not use directory-wide exclusions in place of named files.
+SDK_IMPORT_WHITELIST: dict[str, str] = {
+    "ai/factory.py": "AI Gateway assembly: only place that constructs Provider/LocalWhisper/EdgeTTS",
+    "ai/gateway.py": "Gateway STT HTTP path uses httpx; adapters wrap concrete ASR/TTS",
+    "ai/protocols.py": "Shared Generation typing from provider contracts",
+    "provider.py": "Concrete LLM Provider implementation (ai/* may import)",
+    "local_whisper.py": "Concrete Whisper adapter implementation",
+    "tts.py": "Concrete EdgeTTS implementation (lazy SDK import inside)",
+    "llm_service.py": "Legacy CLI LLM HTTP client; not a business write path",
+    "cli.py": "Ops CLI retention HTTP client to local API",
+    "feishu.py": "Feishu OAuth/API HTTP client (integration boundary)",
+    "stt_service.py": "Speech helper wrapping LocalWhisper for optional STT",
+    "tts_service.py": "Speech helper wrapping EdgeTTS for optional TTS",
+    "voice_acceptance.py": "Offline voice acceptance script, not request handlers",
+}
 
 FORBIDDEN_MODULES = frozenset({
     "openai", "anthropic", "edge_tts", "whisper", "httpx",
@@ -213,14 +222,14 @@ def test_fake_structured_writes_ai_usage(tmp_path: Path) -> None:
 
 
 def test_business_modules_do_not_import_provider_sdks_or_concrete_providers() -> None:
-    files: list[Path] = []
-    for target in BUSINESS_DIRS:
-        if target.is_file():
-            files.append(target)
-        else:
-            files.extend(sorted(target.rglob("*.py")))
+    """Scan all apps/api/interviewer/**/*.py; only SDK_IMPORT_WHITELIST may import forbidden symbols."""
+    files = sorted(INTERVIEWER_ROOT.rglob("*.py"))
+    assert files, "interviewer package missing"
     offenders: list[str] = []
     for path in files:
+        rel = path.relative_to(INTERVIEWER_ROOT).as_posix()
+        if rel in SDK_IMPORT_WHITELIST:
+            continue
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
             if not isinstance(node, (ast.Import, ast.ImportFrom)):
@@ -231,13 +240,22 @@ def test_business_modules_do_not_import_provider_sdks_or_concrete_providers() ->
                 for alias in node.names:
                     root = alias.name.split(".", 1)[0]
                     if root in FORBIDDEN_MODULES:
-                        offenders.append(f"{path.relative_to(ROOT)}: import {alias.name}")
+                        offenders.append(f"{rel}: import {alias.name}")
             else:
                 module = node.module or ""
                 root = module.split(".", 1)[0]
                 if root in FORBIDDEN_MODULES:
-                    offenders.append(f"{path.relative_to(ROOT)}: from {module} import ...")
+                    offenders.append(f"{rel}: from {module} import ...")
                 for alias in node.names:
-                    if (module, alias.name) in FORBIDDEN_FROM:
-                        offenders.append(f"{path.relative_to(ROOT)}: from {module} import {alias.name}")
+                    key = (module, alias.name)
+                    # Also match relative imports rewritten as bare module names.
+                    if key in FORBIDDEN_FROM or (module.split(".")[-1], alias.name) in {
+                        ("provider", "Provider"),
+                        ("local_whisper", "LocalWhisper"),
+                        ("tts", "EdgeTTS"),
+                    }:
+                        offenders.append(f"{rel}: from {module} import {alias.name}")
     assert offenders == [], offenders
+    # Whitelist entries must still exist (no stale excuses).
+    missing = [name for name in SDK_IMPORT_WHITELIST if not (INTERVIEWER_ROOT / name).is_file()]
+    assert missing == [], f"stale whitelist paths: {missing}"

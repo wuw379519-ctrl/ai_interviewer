@@ -1031,3 +1031,43 @@ Docker 等价思路：起一次性 Postgres 容器，设 `TEST_DATABASE_URL`/`DA
 
 **依赖**：`celery[redis]==5.4.0`、`redis==5.3.1`（及 kombu/amqp/billiard 等）— 报告/清理队列与 Redis broker；测试可用 `CELERY_TASK_ALWAYS_EAGER`。
 
+## D79 Task 8b：收尾备忘结论与索引
+
+**状态**：部分落地（文档/AST/event_replay E2E）；**compose 实起仍为阻塞项**（见下）。
+
+**日期**：2026-11-12
+
+### 遗留备忘结论
+
+| 条目 | 结论 |
+| --- | --- |
+| `data_policies` 非 default 租户（D72） | **记录为后续**；本轮不做。非 default 主流程仍可能 `NOT_READY`。 |
+| WS 多 worker 双活 / 状态机（D74/D76/D78） | **记录为 sticky A 已知限制**；seq 唯一约束只防撞号、**不保证**跨进程 turn 全局顺序。彻底解决靠 **Redis SessionStore（后续 B）**。 |
+| 回答与题目矛盾检测（D77） | **不做**（本轮）；保持 TODO。 |
+| `answer_too_fast` 3000ms 校准（D77） | **记录为后续**（真实 latency 分布后再调）。 |
+| 生产 sticky 方案（D78） | **待定**（部署层选定）。 |
+| Protocol sync→async（D71/D73） | **已做**：Task 6 选定双轨 C 并落地。 |
+| 练习面是否迁 Gateway（D71） | **记录为后续 / 待定**；当前例外保留。 |
+| VAD 误触发升级（D76） | **记录为后续**。 |
+| Compose 实起（D78→8b） | **阻塞**：交付 Windows 环境无 Docker Desktop / WSL / `gh`，无法本机或代跑 CI 日志。责任环境：本机开发者工作站；解锁需安装 Docker 或 push 触发 `compose-smoke` 并由有权限者取回 Actions 日志。 |
+
+### Task 1–8 决策索引（D67–D79）
+
+| D | Task / 主题 |
+| --- | --- |
+| D67 | SQLite↔PG 语义对齐 |
+| D68 | Task 1 parity 复核 |
+| D69 | 路由模块化 |
+| D70 | Task 3 interview_events |
+| D71 | Task 5 AI Gateway |
+| D72 | Task 4 多租户 RLS |
+| D73 | Task 6a Protocol 双轨 C |
+| D74 | Task 6a 单写 WS 顶替 |
+| D75 | Task 6b 协议字段 |
+| D76 | Task 6b pipeline/VAD |
+| D77 | Task 7 proctor / riskItems |
+| D78 | Task 8a compose/Celery/sticky |
+| D79 | Task 8b 收尾备忘（本条） |
+
+编号连续：D67→D79 无跳号、无重复。
+

@@ -133,8 +133,30 @@ docker compose -f infra/docker-compose.yml ps
 # 期望 api healthy（ready）；worker 运行中
 ```
 
-**已知限制（Task 8a）**：**compose 实起待验证**（交付环境曾无 Docker daemon；以 `compose.validate.py` + CI workflow `compose-smoke.yml` 补证据）。**Task 8b 全量验收必须包含 compose 实起通过日志**。Sticky 失效时靠 `event_replay` 续场（可能丢未落库 turn）；跨 worker 双活靠 DB seq 唯一约束兜底，非进程内顶替。
+**已知限制（Task 8a/8b）**：**compose 实起仍阻塞**（本机无 Docker/WSL/`gh`；结构门禁 `compose.validate.py` + CI `compose-smoke.yml` 已备）。Sticky 失效靠 `event_replay` 续场（可能丢未落库 turn）；跨 worker 双活靠 DB seq 唯一约束兜底（防撞号，不保证跨进程 turn 顺序）。`data_policies` 非 default 租户未做。能量 VAD 可能误触发。熔断为进程内。详见 [D79](DECISIONS.md#d79-task-8b收尾备忘结论与索引)。
 
+### 项目收尾摘要（Task 1–8）
+
+**端点 / 协议（节选）**
+- Task 3：`GET /api/admin/interviews/{id}/events`（`interview_events` 回放）
+- Task 6：`WS /ws/interview/{session_id}`（**不进 OpenAPI**；paths 仍以 REST 计）
+- Task 7：报告 `riskItems`；WS `proctor_signal`（无新 REST 端点）
+- OpenAPI：`pnpm api:openapi` → `docs/openapi.json`（约 **44** paths）
+
+**命令**
+```powershell
+python infra/compose.validate.py
+docker compose -f infra/docker-compose.yml up --build -d
+$env:CELERY_TASK_ALWAYS_EAGER='true'; $env:PYTHONPATH='apps/api'
+& .\.venv-clean\Scripts\python.exe -c "from interviewer.workers.tasks_cleanup import run_retention_cleanup; print(run_retention_cleanup(dry_run=True))"
+# failover：pytest apps/api/tests/test_failover_drill.py；说明见 docs/ops/failover-drill.md
+```
+
+**配置（新增/关键）**：`REDIS_URL`、`CELERY_TASK_ALWAYS_EAGER`、`CELERY_CLEANUP_EXECUTE`、`LLM_PROVIDER`（CI=`fake`）、`FEISHU_*` 占位、生产 `DATABASE_URL` 角色 **NOSUPERUSER NOBYPASSRLS**。
+
+**迁移总览**：Postgres `0000`–`0015`；SQLite `0001`–`0008`（含 tenants、events、ai_usage、proctor_logs、RLS）。
+
+**决策索引**：D67–D79 见 [DECISIONS.md 末尾 D79](DECISIONS.md#d79-task-8b收尾备忘结论与索引)。
 
 ### AI Gateway（配置）
 
