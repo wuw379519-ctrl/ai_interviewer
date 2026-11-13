@@ -1007,13 +1007,9 @@ Docker 等价思路：起一次性 Postgres 容器，设 `TEST_DATABASE_URL`/`DA
 
 **设计源**：`docs/ai-interviewer-architecture.md` §3.2（会话粘性）、§3.3（AI 网关降级）、§七（Celery+Redis）、§八 M6；实现以本决策为准。`infra/docker-compose.yml` 对齐架构树，本轮不含 MinIO。
 
-**Compose**：`postgres` + `redis` + `api` + `worker`（worker 兼 beat）。API healthcheck = `GET /api/ready`。生产 `DATABASE_URL` 必须 `NOSUPERUSER NOBYPASSRLS`（见 `infra/postgres/init-app-role.sql` / Task 4）；compose 开发可用超级用户迁移，上线前切 `aii_app`。
+**Compose**：`postgres` + `redis` + `api` + `worker`（worker 兼 beat）。API healthcheck = `GET /api/ready`。生产与 compose 运行时 `DATABASE_URL` 必须 `NOSUPERUSER NOBYPASSRLS`（`aii_app`，见 `infra/postgres/init-app-role.sql` / Task 4）；DDL 迁移经 `MIGRATE_DATABASE_URL`（postgres 超级用户）后授权给 `aii_app`。
 
-**Compose 实起待验证（关闭缺口）**：交付机无 Docker daemon；本轮以 `python infra/compose.validate.py` 做结构门禁，并增加 `.github/workflows/compose-smoke.yml`（有 Docker 的 CI runner 上 `compose up` + curl `/api/ready`）。**Task 8b 全量验收必须包含 compose 实起通过证据**（本地或 CI 日志）。
-
-离线校验**已覆盖**：服务名；`depends_on` + `service_healthy` 链（api←pg/redis，worker←api）；healthcheck 字符串为 `/api/ready`；`env_file: ../.env`；volume `aii_pg_data`；`init-app-role.sql` 挂到 `initdb.d/01-…`；角色 SQL 含 NOSUPERUSER/NOBYPASSRLS；worker `--beat`；nginx `ip_hash`；compose YAML 无明文 sk- 类密钥。
-
-离线校验**未覆盖**：镜像拉取；healthcheck 进程真实可执行/退出码；对活 PG 的 migrate+ready；redis 连通；Celery broker 握手与 beat 触发；named volume 创建；initdb 脚本运行时顺序；CPU/内存资源；worker 消费任务的运行日志。
+**Compose 实起（已解决，见 D79）**：结构门禁 `python infra/compose.validate.py` + CI `.github/workflows/compose-smoke.yml`。实起证据记在 D79。
 
 **Celery 任务**：
 - `generate_report_task`：异步报告；**HTTP `POST /score` 仍同步**（默认降级/本地路径）。迁移策略：ops 或后续开关可 `delay()`，客户端轮询报告。
@@ -1033,9 +1029,18 @@ Docker 等价思路：起一次性 Postgres 容器，设 `TEST_DATABASE_URL`/`DA
 
 ## D79 Task 8b：收尾备忘结论与索引
 
-**状态**：部分落地（文档/AST/event_replay E2E）；**compose 实起仍为阻塞项**（见下）。
+**状态**：**已关闭**（文档 / AST / event_replay E2E / Compose 实起均完成）。
 
-**日期**：2026-11-12
+**日期**：2026-11-13
+
+### Compose 实起证据（已解决）
+
+| 项 | 值 |
+| --- | --- |
+| 结论 | **已解决**（CI 实起通过；本机无 Docker 不构成阻塞） |
+| Workflow | GitHub Actions **`Compose smoke`**（`.github/workflows/compose-smoke.yml`） |
+| 通过 commit | **`271a7a1`** — `fix(ci): tolerate delayed celery worker log markers` |
+| 覆盖 | 镜像构建；migrate；`GET /api/ready`；api healthy；worker 进程在跑 |
 
 ### 遗留备忘结论
 
@@ -1049,15 +1054,15 @@ Docker 等价思路：起一次性 Postgres 容器，设 `TEST_DATABASE_URL`/`DA
 | Protocol sync→async（D71/D73） | **已做**：Task 6 选定双轨 C 并落地。 |
 | 练习面是否迁 Gateway（D71） | **记录为后续 / 待定**；当前例外保留。 |
 | VAD 误触发升级（D76） | **记录为后续**。 |
-| Compose 实起（D78→8b） | **阻塞**：交付 Windows 环境无 Docker Desktop / WSL / `gh`，无法本机或代跑 CI 日志。责任环境：本机开发者工作站；解锁需安装 Docker 或 push 触发 `compose-smoke` 并由有权限者取回 Actions 日志。 |
+| Compose 实起（D78→8b） | **已解决**：见上表；证据 commit `271a7a1` / workflow `Compose smoke`。 |
 
 ### Task 1–8 决策索引（D67–D79）
 
 | D | Task / 主题 |
 | --- | --- |
-| D67 | SQLite↔PG 语义对齐 |
+| D67 | SQLite↔PG 语义对齐（Task 1 前置） |
 | D68 | Task 1 parity 复核 |
-| D69 | 路由模块化 |
+| D69 | Task 2 路由模块化 |
 | D70 | Task 3 interview_events |
 | D71 | Task 5 AI Gateway |
 | D72 | Task 4 多租户 RLS |
@@ -1069,5 +1074,5 @@ Docker 等价思路：起一次性 Postgres 容器，设 `TEST_DATABASE_URL`/`DA
 | D78 | Task 8a compose/Celery/sticky |
 | D79 | Task 8b 收尾备忘（本条） |
 
-编号连续：D67→D79 无跳号、无重复。
+编号连续：D67→D79 无跳号、无重复。Task 1–8 均有对应 D 条目（Task 顺序与 D 编号不完全同序：Gateway D71 早于租户 D72，以交付顺序为准）。
 
