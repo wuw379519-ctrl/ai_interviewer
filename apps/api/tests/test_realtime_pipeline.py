@@ -375,7 +375,9 @@ def test_video_chunk_accepted_without_blocking_audio_turn(tmp_path: Path) -> Non
             assert live and live.pipeline
             assert live.pipeline.video_frames_accepted >= 8
             assert live.pipeline.video_frames_dropped >= 1
-            assert live.pipeline.last_video_bytes is not None
+            # D80/D81: payloads are discarded after observe — only meta ring retained.
+            assert live.pipeline.last_video_bytes is None
+            assert len(live.pipeline.video_meta) <= 8
             ws.send_text(json.dumps({
                 "v": "aii-ws-v1",
                 "type": "text_input",

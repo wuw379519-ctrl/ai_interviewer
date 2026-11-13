@@ -105,6 +105,7 @@ class ProctorSignalMessage(Envelope):
     signal_type: Literal[
         "tab_hidden", "window_blur", "answer_latency",
         "silence_ratio", "volume_spike", "speech_rate",
+        "no_face", "multi_face", "camera_stall", "camera_lost",
     ] = Field(alias="signalType")
     payload: dict[str, object] = Field(default_factory=dict)
     t: int | None = None

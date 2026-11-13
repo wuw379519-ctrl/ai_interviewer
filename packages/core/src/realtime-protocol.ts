@@ -18,7 +18,7 @@ export type RealtimeClientMessage =
   | { v: typeof REALTIME_PROTOCOL_VERSION; type: "text_input"; text: string; idempotencyKey: string; expectedQuestionSeq?: number }
   | { v: typeof REALTIME_PROTOCOL_VERSION; type: "end_turn"; idempotencyKey?: string }
   | { v: typeof REALTIME_PROTOCOL_VERSION; type: "interrupt" }
-  | { v: typeof REALTIME_PROTOCOL_VERSION; type: "proctor_signal"; signalType: "tab_hidden" | "window_blur" | "answer_latency" | "silence_ratio" | "volume_spike" | "speech_rate"; payload?: Record<string, unknown>; t?: number }
+  | { v: typeof REALTIME_PROTOCOL_VERSION; type: "proctor_signal"; signalType: "tab_hidden" | "window_blur" | "answer_latency" | "silence_ratio" | "volume_spike" | "speech_rate" | "no_face" | "multi_face" | "camera_stall" | "camera_lost"; payload?: Record<string, unknown>; t?: number }
   | { v: typeof REALTIME_PROTOCOL_VERSION; type: "ping"; t?: number }
   | { v: typeof REALTIME_PROTOCOL_VERSION; type: "close"; reason?: string };
 

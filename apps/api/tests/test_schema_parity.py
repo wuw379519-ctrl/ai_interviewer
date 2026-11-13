@@ -31,6 +31,7 @@ EXPECTED_SQLITE_FILES = (
     "0006_ai_usage.sql",
     "0007_tenants.sql",
     "0008_proctor_logs.sql",
+    "0009_proctor_vision_signals.sql",
 )
 
 
@@ -110,14 +111,19 @@ def test_sqlite_migration_files_are_append_only_and_parseable() -> None:
         chunks = [part.strip() for part in content.split("-- statement-breakpoint") if part.strip()]
         assert chunks, file.name
         for chunk in chunks:
-            assert not chunk.lower().startswith("drop table"), f"destructive DDL in {file.name}"
+            lowered = chunk.lower()
+            if lowered.startswith("drop table"):
+                # SQLite cannot ALTER CHECK — Task 9b rebuild copies then drops the old table.
+                assert "rename to" in content.lower(), f"destructive DDL in {file.name}"
+                continue
+            assert not lowered.startswith("drop table"), f"destructive DDL in {file.name}"
 
 
 def test_postgres_migration_chain_present_and_immutable_naming() -> None:
     names = sorted(path.name for path in POSTGRES_MIGRATIONS.glob("*.sql"))
     assert names[0] == "0000_init.sql"
-    assert names[-1] == "0015_proctor_logs.sql"
-    assert len(names) == 16
+    assert names[-1] == "0016_proctor_vision_signals.sql"
+    assert len(names) == 17
     for name in names:
         assert re.fullmatch(r"\d{4}_[a-z0-9_]+\.sql", name), name
 

@@ -234,7 +234,8 @@ proctor_logs = table(
     Column("ts", UTCDateTime(), nullable=False, default=now),
     CheckConstraint(
         "signal_type IN ('tab_hidden','window_blur','answer_latency',"
-        "'silence_ratio','volume_spike','speech_rate')"
+        "'silence_ratio','volume_spike','speech_rate',"
+        "'no_face','multi_face','camera_stall','camera_lost')"
     ),
 )
 TABLES = {item.name: item for item in metadata.sorted_tables}

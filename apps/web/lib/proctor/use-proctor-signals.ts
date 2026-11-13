@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { REALTIME_PROTOCOL_VERSION } from "@aii/core";
 import { InterviewWsClient } from "@/lib/realtime/ws-client";
 import {
+  attachCameraLostProctor,
   attachVisibilityProctor,
   measureAnswerLatency,
   type ProctorClientSignal,
@@ -16,13 +17,15 @@ function wsUrl(interviewId: string): string {
 
 /**
  * Open a lightweight WS for proctor_signal while the candidate is interviewing.
- * Captures visibility/blur and answer_latency; server derives audio metrics itself.
+ * Captures visibility/blur, camera_lost, and answer_latency; server derives audio/vision itself.
  */
 export function useProctorSignals(options: {
   interviewId: string;
   token: string;
   active: boolean;
   questionSeq: number | undefined;
+  /** Optional live MediaStream — track ended → camera_lost. */
+  stream?: MediaStream | null;
 }): void {
   const clientRef = useRef<InterviewWsClient | null>(null);
   const questionShownAt = useRef<number>(Date.now());
@@ -52,13 +55,15 @@ export function useProctorSignals(options: {
       });
     };
     const disposeVisibility = attachVisibilityProctor(emit);
+    const disposeCamera = attachCameraLostProctor(options.stream, emit);
 
     return () => {
       disposeVisibility();
+      disposeCamera();
       client.close();
       if (clientRef.current === client) clientRef.current = null;
     };
-  }, [options.active, options.interviewId, options.token]);
+  }, [options.active, options.interviewId, options.token, options.stream]);
 
   useEffect(() => {
     if (!options.active || options.questionSeq === undefined) return;

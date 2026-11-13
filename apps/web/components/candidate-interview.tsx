@@ -33,6 +33,7 @@ export function CandidateInterview({ id }: { id: string }) {
     token,
     active: proctorActive,
     questionSeq: view?.questionSeq,
+    stream: devices.stream,
   });
   const needsMedia = Boolean(view && (view.cameraRequired || (view.mode === "voice" && !view.textFallback)));
   const mediaReady = !view || ((!view.cameraRequired || devices.status.cameraActive) && (view.mode !== "voice" || view.textFallback || devices.status.microphoneActive));

@@ -1074,12 +1074,13 @@ Docker 等价思路：起一次性 Postgres 容器，设 `TEST_DATABASE_URL`/`DA
 | D78 | Task 8a compose/Celery/sticky |
 | D79 | Task 8b 收尾备忘（本条） |
 | D80 | Task 9a 视频语音面试帧传输 |
+| D81 | Task 9b 多模态防作弊与状态协同 |
 
-编号连续：D67→D80 无跳号、无重复。Task 1–8 均有对应 D 条目（Task 顺序与 D 编号不完全同序：Gateway D71 早于租户 D72，以交付顺序为准）。
+编号连续：D67→D81 无跳号、无重复。Task 1–9 均有对应 D 条目（Task 顺序与 D 编号不完全同序：Gateway D71 早于租户 D72，以交付顺序为准）。
 
 ## D80 Task 9a：视频语音面试（帧传输与前端渲染）
 
-**状态**：已落地（Task 9a）
+**状态**：已落地（Task 9a；Task 9b 补充断流通知与背压说明）
 
 **日期**：2026-11-13
 
@@ -1087,11 +1088,29 @@ Docker 等价思路：起一次性 Postgres 容器，设 `TEST_DATABASE_URL`/`DA
 
 **协议（`realtime/protocol.py` → `packages/core/src/realtime-protocol.ts`）**：
 - C→S：`video_chunk`（`frameBase64` JPEG/WebP，`seq` 递增；上限约 150KB 解码 / 200k base64 字符）。**不做 WebRTC**（初期降低复杂度）。
-- S→C：`avatar_ready`（`mode=avatar_placeholder`）；`tts_chunk` 继续音频回推。
+- S→C：`avatar_ready`（`mode=avatar_placeholder`）；`tts_chunk` 继续音频回推；连续约 10s 无帧时 `state_changed(via=camera_stall)`。
 
-**后端**：`RealtimePipeline.handle_video_chunk` 独立于 ASR/LLM/TTS；元数据环长 8（丢最旧）、只保留最新一帧字节作防作弊扩展点；`asyncio.sleep(0)` 让出事件循环。帧**不**当作评估指令、**不**自动调分。
+**后端**：`RealtimePipeline.handle_video_chunk` 独立于 ASR/LLM/TTS。**背压丢弃策略**：元数据环长 `VIDEO_META_MAX=8`（丢最旧）；高帧率时优先保证 ASR/TTS 事件循环，**故意丢帧**而非排队。观察后立即丢弃 payload（`last_video_bytes=None`），**不**长期保留候选人原始帧。后续防作弊依赖实时流分析或「最新帧触发」检测（见 D81），而非回放完整帧历史。`asyncio.sleep(0)` 让出事件循环。帧**不**当作评估指令、**不**自动调分。
 
-**前端**：`VideoInterviewRoom` — `getUserMedia` / 复用设备流、本机预览、Canvas≈5fps 截帧经 `InterviewWsClient` 发送；AI 主展示区为占位。可选 MediaRecorder 整段上传**本轮不做**（仅帧通道）。
+**前端**：`VideoInterviewRoom` — `getUserMedia` / 复用设备流、本机预览、Canvas≈5fps 截帧经 `InterviewWsClient` 发送；权限拒绝 / 轨道 `ended`（拔摄像头）有明确 UI 降级与重试；AI 主展示区为占位。可选 MediaRecorder 整段上传**本轮不做**（仅帧通道）。
 
-**已知限制**：非 WebRTC，带宽与清晰度有限；数字人口型驱动未做；帧默认进程内短留，不落 durable blob；生产需另定保留期与删除策略。
+**已知限制**：非 WebRTC，带宽与清晰度有限；数字人口型驱动未做；帧不落 durable blob；生产需另定保留期与删除策略。
+
+## D81 Task 9b：多模态防作弊与状态协同
+
+**状态**：已落地（Task 9b）
+
+**日期**：2026-11-13
+
+**设计源**：`docs/ai-interviewer-architecture.md` §防作弊 / 过程信号；实现以本决策为准。
+
+**视觉检测**：抽象 `VisionDetector`；CI/缺依赖用 `FakeVisionDetector`；可选 `OpenCvHaarVisionDetector`（Haar Cascade，无 torch）。在 `handle_video_chunk` 对最新帧 `observe` 后立即丢弃字节。阈值：`no_face` ≥10s、`multi_face` ≥3s → `proctor_logs`；`camera_stall` ≥10s 无帧 → log + `state_changed`。
+
+**信号扩展**：`proctor_logs.signal_type` 增补 `no_face` / `multi_face` / `camera_stall` / `camera_lost`（PG `0016`、SQLite `0009` 重建 CHECK）。
+
+**融合评分**：`score_proctor_risks` 将视觉信号与切屏/过快等音频侧信号合并为 `riskItems`（`no_face_detected` / `multi_face_detected` / `camera_feed_interrupted` 等）；一律 `affectsScore=false`，仅供人工复核。
+
+**前端协同**：`visibilitychange` / `blur` → `proctor_signal`；`MediaStream` track `ended` → `camera_lost`；WS 重连后若无流则重新 `getUserMedia`。
+
+**不做**：不引入 torch 等重度 DL；不长期存储原始视频帧。
 

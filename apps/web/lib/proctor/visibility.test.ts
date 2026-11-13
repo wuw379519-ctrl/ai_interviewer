@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { attachVisibilityProctor, measureAnswerLatency } from "./visibility";
+import {
+  attachCameraLostProctor,
+  attachVisibilityProctor,
+  measureAnswerLatency,
+} from "./visibility";
 
 describe("proctor visibility", () => {
   afterEach(() => {
@@ -34,6 +38,34 @@ describe("proctor visibility", () => {
     doc.dispatchEvent(new Event("visibilitychange"));
     expect(emit).toHaveBeenCalledWith({ signalType: "tab_hidden", payload: { hidden: true } });
     dispose();
+  });
+
+  it("emits camera_lost when a video track ends", () => {
+    const endedHandlers: EventListener[] = [];
+    const track = {
+      addEventListener: (type: string, handler: EventListener) => {
+        if (type === "ended") endedHandlers.push(handler);
+      },
+      removeEventListener: vi.fn(),
+    };
+    const stream = {
+      getVideoTracks: () => [track],
+    } as unknown as MediaStream;
+    const emit = vi.fn();
+    const dispose = attachCameraLostProctor(stream, emit);
+    for (const handler of endedHandlers) handler(new Event("ended"));
+    expect(emit).toHaveBeenCalledWith({
+      signalType: "camera_lost",
+      payload: { reason: "track_ended" },
+    });
+    dispose();
+  });
+
+  it("noop dispose when stream is null", () => {
+    const emit = vi.fn();
+    const dispose = attachCameraLostProctor(null, emit);
+    dispose();
+    expect(emit).not.toHaveBeenCalled();
   });
 
   it("measures answer latency from question shown", () => {

@@ -1,12 +1,13 @@
 /**
- * Page visibility / focus signals for Task 7 proctoring.
- * Emits only tab_hidden / window_blur — no PII.
+ * Page visibility / focus / camera signals for Task 7 / 9b proctoring.
+ * Emits only non-PII telemetry.
  */
 
 export type ProctorClientSignal =
   | { signalType: "tab_hidden"; payload: { hidden: boolean } }
   | { signalType: "window_blur"; payload: { reason: "blur" } }
-  | { signalType: "answer_latency"; payload: { latencyMs: number; questionSeq?: number } };
+  | { signalType: "answer_latency"; payload: { latencyMs: number; questionSeq?: number } }
+  | { signalType: "camera_lost"; payload: { reason: string } };
 
 export type ProctorEmit = (signal: ProctorClientSignal) => void;
 
@@ -25,6 +26,22 @@ export function attachVisibilityProctor(emit: ProctorEmit): () => void {
   return () => {
     document.removeEventListener("visibilitychange", onVisibility);
     window.removeEventListener("blur", onBlur);
+  };
+}
+
+/** Watch MediaStream video tracks; emit camera_lost when a track ends. */
+export function attachCameraLostProctor(
+  stream: MediaStream | null | undefined,
+  emit: ProctorEmit,
+): () => void {
+  if (!stream) return () => undefined;
+  const onEnded = () => {
+    emit({ signalType: "camera_lost", payload: { reason: "track_ended" } });
+  };
+  const tracks = stream.getVideoTracks();
+  for (const track of tracks) track.addEventListener("ended", onEnded);
+  return () => {
+    for (const track of tracks) track.removeEventListener("ended", onEnded);
   };
 }
 

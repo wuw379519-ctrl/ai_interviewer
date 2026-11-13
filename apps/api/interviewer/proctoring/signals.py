@@ -1,4 +1,4 @@
-"""Append / list proctor_logs under the current tenant (Task 7)."""
+"""Append / list proctor_logs under the current tenant (Task 7 / 9b)."""
 from __future__ import annotations
 
 from typing import Literal
@@ -18,11 +18,16 @@ SIGNAL_TYPES = frozenset({
     "silence_ratio",
     "volume_spike",
     "speech_rate",
+    "no_face",
+    "multi_face",
+    "camera_stall",
+    "camera_lost",
 })
 
 SignalType = Literal[
     "tab_hidden", "window_blur", "answer_latency",
     "silence_ratio", "volume_spike", "speech_rate",
+    "no_face", "multi_face", "camera_stall", "camera_lost",
 ]
 
 

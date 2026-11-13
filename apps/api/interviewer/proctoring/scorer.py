@@ -105,6 +105,42 @@ def score_proctor_risks(logs: list[Object]) -> list[ProctorRiskItem]:
             for_human_review=False,
         ))
 
+    no_face = [row for row in logs if str(row.get("signalType")) == "no_face"]
+    if no_face:
+        items.append(ProctorRiskItem(
+            code="no_face_detected",
+            severity="review",
+            message=f"画面无人脸持续异常 {len(no_face)} 次（阈值≥10s），建议人工核对是否离席。",
+            signal_count=len(no_face),
+            affects_score=False,
+            for_human_review=True,
+        ))
+
+    multi_face = [row for row in logs if str(row.get("signalType")) == "multi_face"]
+    if multi_face:
+        items.append(ProctorRiskItem(
+            code="multi_face_detected",
+            severity="review",
+            message=f"画面多人脸持续异常 {len(multi_face)} 次（阈值≥3s），建议人工核对是否旁人辅助。",
+            signal_count=len(multi_face),
+            affects_score=False,
+            for_human_review=True,
+        ))
+
+    stalls = [
+        row for row in logs
+        if str(row.get("signalType")) in {"camera_stall", "camera_lost"}
+    ]
+    if stalls:
+        items.append(ProctorRiskItem(
+            code="camera_feed_interrupted",
+            severity="hint",
+            message=f"摄像头断流/丢失 {len(stalls)} 次，可能为权限拒绝或设备拔出，仅供人工参考。",
+            signal_count=len(stalls),
+            affects_score=False,
+            for_human_review=False,
+        ))
+
     # Contradiction detection intentionally deferred (LLM cost / false positives).
     return items
 

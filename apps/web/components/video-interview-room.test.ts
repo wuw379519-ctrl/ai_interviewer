@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   VideoInterviewRoom,
   captureVideoFrameBase64,
+  mediaDegradeMessage,
   shouldRequestMedia,
 } from "./video-interview-room";
 
@@ -12,6 +13,12 @@ describe("VideoInterviewRoom helpers", () => {
     expect(shouldRequestMedia(true, false)).toBe(true);
     expect(shouldRequestMedia(true, true)).toBe(false);
     expect(shouldRequestMedia(false, false)).toBe(false);
+  });
+
+  it("exposes clear degrade copy for permission and unplug", () => {
+    expect(mediaDegradeMessage("permission_denied")).toContain("权限被拒绝");
+    expect(mediaDegradeMessage("track_ended")).toContain("断开");
+    expect(mediaDegradeMessage(null)).toBe("");
   });
 
   it("captures jpeg base64 from a mocked video/canvas", () => {

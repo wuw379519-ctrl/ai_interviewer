@@ -19,8 +19,10 @@ from uuid import uuid4
 
 from interviewer import database as db
 from interviewer import events
-from interviewer.contracts import TurnInput
+from interviewer.contracts import Object, TurnInput
 from interviewer.errors import DomainError
+from interviewer.proctoring import append_proctor_log
+from interviewer.proctoring.vision import VisionDetector, VisionObservation, default_vision_detector
 from interviewer.realtime.protocol import (
     MAX_AUDIO_CHUNK_PCM_BYTES,
     MAX_VIDEO_FRAME_BYTES,
@@ -45,6 +47,9 @@ logger = logging.getLogger("interviewer.realtime.pipeline")
 
 SendFn = Callable[[object], Awaitable[None]]
 WS_TURN_SCOPE = "WS /turns"
+VIDEO_STALL_SEC = 10.0
+NO_FACE_SEC = 10.0
+MULTI_FACE_SEC = 3.0
 
 
 @dataclass
@@ -89,11 +94,13 @@ class RealtimePipeline:
     send: SendFn
     vad: EnergyVad = field(default_factory=EnergyVad)
     player: TtsPlayer | None = None
+    vision: VisionDetector = field(default_factory=default_vision_detector)
     pcm_buffer: bytearray = field(default_factory=bytearray)
     last_audio_seq: int = -1
     last_video_seq: int = -1
     generation: int = 0
     turn_task: asyncio.Task[None] | None = None
+    stall_task: asyncio.Task[None] | None = None
     last_latency: LatencySample | None = None
     last_interrupt: InterruptTiming | None = None
     latency_log: list[LatencySample] = field(default_factory=list)
@@ -101,11 +108,24 @@ class RealtimePipeline:
     video_frames_accepted: int = 0
     video_frames_dropped: int = 0
     last_video_bytes: bytes | None = None
+    last_video_mono: float | None = None
+    no_face_since: float | None = None
+    multi_face_since: float | None = None
+    no_face_emitted: bool = False
+    multi_face_emitted: bool = False
+    camera_stall_emitted: bool = False
     cancelled: bool = False
 
     def __post_init__(self) -> None:
         if self.player is None:
             self.player = TtsPlayer(send=self.send)
+        if self.stall_task is None:
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+            if loop is not None:
+                self.stall_task = loop.create_task(self._watch_video_stall())
 
     def cancel(self) -> None:
         """Supersede / disconnect: abandon in-flight turn; do not write results."""
@@ -116,6 +136,9 @@ class RealtimePipeline:
         if self.turn_task is not None and not self.turn_task.done():
             self.turn_task.cancel()
         self.turn_task = None
+        if self.stall_task is not None and not self.stall_task.done():
+            self.stall_task.cancel()
+        self.stall_task = None
         self.pcm_buffer.clear()
         self.vad.reset()
         self.video_meta.clear()
@@ -182,8 +205,13 @@ class RealtimePipeline:
         )
         self.video_meta.append(meta)
         self.video_frames_accepted += 1
-        # Keep only the latest decoded frame for optional proctor hooks (memory-bounded).
-        self.last_video_bytes = raw or None
+        self.last_video_mono = meta.received_mono
+        self.camera_stall_emitted = False
+        # Observe then discard payload — do not retain candidate frames (D80/D81).
+        if raw:
+            observation = self.vision.observe(raw, image_format=message.format)
+            await self._apply_vision(observation, meta.received_mono)
+        self.last_video_bytes = None
         if self.video_frames_accepted == 1 or self.video_frames_accepted % 25 == 0:
             logger.info(
                 "video_chunk interview=%s seq=%s format=%s bytes=%s accepted=%s dropped=%s",
@@ -196,6 +224,75 @@ class RealtimePipeline:
             )
         # Yield so audio turn tasks scheduled on this loop are not starved.
         await asyncio.sleep(0)
+
+    async def _watch_video_stall(self) -> None:
+        """If frames stop for VIDEO_STALL_SEC after the first frame, notify + log."""
+        try:
+            while not self.cancelled:
+                await asyncio.sleep(2.0)
+                if self.last_video_mono is None or self.camera_stall_emitted:
+                    continue
+                idle = time.perf_counter() - self.last_video_mono
+                if idle < VIDEO_STALL_SEC:
+                    continue
+                self.camera_stall_emitted = True
+                await self._emit_proctor(
+                    "camera_stall",
+                    {"idleSec": round(idle, 2), "thresholdSec": VIDEO_STALL_SEC},
+                )
+                await self.send(StateChangedMessage(
+                    status="interviewing",
+                    detail={"via": "camera_stall", "idleSec": round(idle, 2)},
+                ))
+        except asyncio.CancelledError:
+            return
+
+    async def _apply_vision(self, observation: VisionObservation, now_mono: float) -> None:
+        if observation.face_count <= 0:
+            self.multi_face_since = None
+            self.multi_face_emitted = False
+            if self.no_face_since is None:
+                self.no_face_since = now_mono
+            elif not self.no_face_emitted and (now_mono - self.no_face_since) >= NO_FACE_SEC:
+                self.no_face_emitted = True
+                await self._emit_proctor(
+                    "no_face",
+                    {
+                        "durationSec": round(now_mono - self.no_face_since, 2),
+                        "thresholdSec": NO_FACE_SEC,
+                        "source": observation.source,
+                    },
+                )
+            return
+        if observation.face_count >= 2:
+            self.no_face_since = None
+            self.no_face_emitted = False
+            if self.multi_face_since is None:
+                self.multi_face_since = now_mono
+            elif not self.multi_face_emitted and (now_mono - self.multi_face_since) >= MULTI_FACE_SEC:
+                self.multi_face_emitted = True
+                await self._emit_proctor(
+                    "multi_face",
+                    {
+                        "durationSec": round(now_mono - self.multi_face_since, 2),
+                        "thresholdSec": MULTI_FACE_SEC,
+                        "faceCount": observation.face_count,
+                        "source": observation.source,
+                    },
+                )
+            return
+        self.no_face_since = None
+        self.multi_face_since = None
+        self.no_face_emitted = False
+        self.multi_face_emitted = False
+
+    async def _emit_proctor(self, signal_type: str, payload: Object) -> None:
+        token = set_current_tenant(self.session.tenant_id)
+        try:
+            with self.service.database.unit_of_work() as connection:
+                append_proctor_log(connection, self.session.interview_id, signal_type, payload)
+        finally:
+            reset_current_tenant(token)
 
     async def handle_text_input(self, message: TextInputMessage) -> None:
         self._spawn_turn(
