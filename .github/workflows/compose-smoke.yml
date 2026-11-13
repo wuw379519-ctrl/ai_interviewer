@@ -7,6 +7,7 @@ on:
     paths:
       - "infra/**"
       - "apps/api/Dockerfile"
+      - "apps/api/docker-entrypoint.sh"
       - "apps/api/migrations/**"
       - "apps/api/interviewer/**"
       - "apps/api/requirements.txt"
@@ -16,6 +17,7 @@ on:
     paths:
       - "infra/**"
       - "apps/api/Dockerfile"
+      - "apps/api/docker-entrypoint.sh"
       - "apps/api/migrations/**"
       - "apps/api/interviewer/**"
       - "apps/api/requirements.txt"
@@ -34,16 +36,35 @@ jobs:
       - uses: actions/checkout@v4
       - name: Offline compose structure gate
         run: python infra/compose.validate.py
-      - name: Build and start stack
+      - name: Build images
+        run: docker compose -f infra/docker-compose.yml build api worker
+      - name: Start postgres and redis
+        run: docker compose -f infra/docker-compose.yml up -d --wait postgres redis
+      - name: Run migrate (visible)
         run: |
           set -e
-          docker compose -f infra/docker-compose.yml up --build -d
+          docker compose -f infra/docker-compose.yml run --rm --no-deps api migrate 2>&1 | tee migrate.out
+      - name: Start api and worker
+        run: |
+          set -e
+          docker compose -f infra/docker-compose.yml up -d api worker
           docker compose -f infra/docker-compose.yml ps
-      - name: Dump api logs if stack failed
+      - name: Dump diagnostics on failure
         if: failure()
         run: |
           docker compose -f infra/docker-compose.yml ps -a || true
-          docker compose -f infra/docker-compose.yml logs api --tail=200 || true
+          {
+            echo "===== migrate.out ====="
+            cat migrate.out 2>/dev/null || true
+            echo "===== api logs ====="
+            docker compose -f infra/docker-compose.yml logs api --no-color --tail=200 || true
+            echo "===== worker logs ====="
+            docker compose -f infra/docker-compose.yml logs worker --no-color --tail=80 || true
+          } | tee compose-failure.txt
+          # Surface into job annotations (readable on the Actions summary).
+          while IFS= read -r line; do
+            echo "::error::compose $line"
+          done < compose-failure.txt || true
       - name: Wait for api /api/ready
         run: |
           set -e
@@ -57,13 +78,13 @@ jobs:
           done
           echo "api_ready_timeout"
           docker compose -f infra/docker-compose.yml ps -a
-          docker compose -f infra/docker-compose.yml logs api --tail=200
+          docker compose -f infra/docker-compose.yml logs api --no-color --tail=200
           exit 1
       - name: Worker process present
         run: |
           docker compose -f infra/docker-compose.yml ps
           docker compose -f infra/docker-compose.yml logs worker --tail=40
-          docker compose -f infra/docker-compose.yml logs worker --tail=40 | grep -E "celery|ready|beat" 
+          docker compose -f infra/docker-compose.yml logs worker --tail=40 | grep -E "celery|ready|beat"
       - name: Tear down
         if: always()
         run: docker compose -f infra/docker-compose.yml down -v

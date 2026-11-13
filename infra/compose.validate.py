@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parent
 COMPOSE = ROOT / "docker-compose.yml"
 INIT_SQL = ROOT / "postgres" / "init-app-role.sql"
 NGINX = ROOT / "nginx" / "nginx.conf"
+ENTRYPOINT = ROOT.parent / "apps" / "api" / "docker-entrypoint.sh"
 
 
 def main() -> int:
@@ -18,10 +19,24 @@ def main() -> int:
     for token in (
         "postgres:", "redis:", "api:", "worker:",
         "/api/ready", "REDIS_URL", "DATABASE_URL", "LLM_PROVIDER",
-        "FEISHU_APP_ID", "celery", "worker", "--beat",
+        "FEISHU_APP_ID", "worker",
     ):
         if token not in text:
             errors.append(f"missing token {token!r}")
+
+    if not ENTRYPOINT.is_file():
+        errors.append("apps/api/docker-entrypoint.sh missing")
+    else:
+        entry = ENTRYPOINT.read_text(encoding="utf-8")
+        for token in ("celery", "--beat", "interviewer.cli migrate", "wait_postgres"):
+            if token not in entry:
+                errors.append(f"entrypoint missing token {token!r}")
+        if "command: [\"api\"]" not in text and "command: ['api']" not in text:
+            # Accept either quoting style for the api service command.
+            if not re.search(r"command:\s*\[\s*[\"']api[\"']\s*\]", text):
+                errors.append("api command must be entrypoint mode ['api']")
+        if not re.search(r"command:\s*\[\s*[\"']worker[\"']\s*\]", text):
+            errors.append("worker command must be entrypoint mode ['worker']")
 
     # depends_on order: api waits for postgres+redis healthy; worker waits for api healthy.
     if not re.search(r"api:[\s\S]*?depends_on:[\s\S]*?postgres:[\s\S]*?condition:\s*service_healthy", text):
