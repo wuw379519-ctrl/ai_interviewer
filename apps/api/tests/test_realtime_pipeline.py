@@ -225,10 +225,20 @@ def test_pipeline_audio_end_turn_asr_path(tmp_path: Path) -> None:
             assert final["text"]
             question = _drain_until(ws, "question")
             assert question["text"]
+            # last_latency is assigned on first tts_chunk (or TTS error), not on question.
+            # Asserting earlier races the async TTS path on slower CI schedulers.
+            tts = _drain_until(ws, "tts_chunk")
+            assert tts.get("audioBase64")
             live = client.app.state.session_store.get(interview_id)
-            assert live and live.pipeline and live.pipeline.last_latency
-            assert live.pipeline.last_latency.asr_first_ms is not None
-            assert live.pipeline.last_latency.asr_first_ms < 300
+            assert live is not None
+            assert live.pipeline is not None
+            sample = live.pipeline.last_latency
+            assert sample is not None
+            assert sample.asr_first_ms is not None
+            assert sample.asr_first_ms >= 0.0
+            assert sample.asr_first_ms < 300.0
+            assert sample.e2e_ms is not None
+            assert sample.e2e_ms >= sample.asr_first_ms
 
 
 def test_vad_barge_in_clears_tts_within_200ms(tmp_path: Path) -> None:
