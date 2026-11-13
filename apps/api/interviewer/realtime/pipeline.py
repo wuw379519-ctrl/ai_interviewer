@@ -23,6 +23,7 @@ from interviewer.contracts import TurnInput
 from interviewer.errors import DomainError
 from interviewer.realtime.protocol import (
     MAX_AUDIO_CHUNK_PCM_BYTES,
+    MAX_VIDEO_FRAME_BYTES,
     AudioChunkMessage,
     EndTurnMessage,
     ErrorMessage,
@@ -32,6 +33,7 @@ from interviewer.realtime.protocol import (
     QuestionMessage,
     StateChangedMessage,
     TextInputMessage,
+    VideoChunkMessage,
 )
 from interviewer.realtime.session_store import LiveSession
 from interviewer.realtime.tts_player import TtsPlayer
@@ -64,6 +66,23 @@ class InterruptTiming:
 
 
 @dataclass
+class VideoFrameMeta:
+    """Lightweight proctoring extension point — payloads are not retained long-term."""
+
+    seq: int
+    format: str
+    byte_len: int
+    width: int | None
+    height: int | None
+    received_mono: float
+    dropped: bool = False
+
+
+# Drop-oldest ring for high-rate video so ASR/TTS turns stay on the event loop.
+VIDEO_META_MAX = 8
+
+
+@dataclass
 class RealtimePipeline:
     service: Service
     session: LiveSession
@@ -72,11 +91,16 @@ class RealtimePipeline:
     player: TtsPlayer | None = None
     pcm_buffer: bytearray = field(default_factory=bytearray)
     last_audio_seq: int = -1
+    last_video_seq: int = -1
     generation: int = 0
     turn_task: asyncio.Task[None] | None = None
     last_latency: LatencySample | None = None
     last_interrupt: InterruptTiming | None = None
     latency_log: list[LatencySample] = field(default_factory=list)
+    video_meta: list[VideoFrameMeta] = field(default_factory=list)
+    video_frames_accepted: int = 0
+    video_frames_dropped: int = 0
+    last_video_bytes: bytes | None = None
     cancelled: bool = False
 
     def __post_init__(self) -> None:
@@ -94,6 +118,8 @@ class RealtimePipeline:
         self.turn_task = None
         self.pcm_buffer.clear()
         self.vad.reset()
+        self.video_meta.clear()
+        self.last_video_bytes = None
 
     async def handle_audio_chunk(self, message: AudioChunkMessage) -> None:
         if message.seq <= self.last_audio_seq:
@@ -119,6 +145,57 @@ class RealtimePipeline:
             assert self.player is not None
             if decision.just_started and self.player.playing:
                 await self.barge_in(onset_mono=time.perf_counter())
+
+    async def handle_video_chunk(self, message: VideoChunkMessage) -> None:
+        """Accept camera stills without awaiting ASR/LLM/TTS (D80 backpressure)."""
+        if message.seq <= self.last_video_seq:
+            # Stale/dup frames: drop silently so a slow client cannot stall audio.
+            self.video_frames_dropped += 1
+            return
+        self.last_video_seq = message.seq
+        raw = b""
+        if message.frame_base64:
+            try:
+                raw = base64.b64decode(message.frame_base64, validate=True)
+            except Exception:
+                await self.send(ErrorMessage(code="VALIDATION_FAILED", message="frameBase64 无效"))
+                return
+            if len(raw) > MAX_VIDEO_FRAME_BYTES:
+                await self.send(ErrorMessage(code="VALIDATION_FAILED", message="单帧视频超过上限"))
+                return
+            if not raw:
+                await self.send(ErrorMessage(code="VALIDATION_FAILED", message="空视频帧"))
+                return
+        dropped = False
+        if len(self.video_meta) >= VIDEO_META_MAX:
+            self.video_meta.pop(0)
+            self.video_frames_dropped += 1
+            dropped = True
+        meta = VideoFrameMeta(
+            seq=message.seq,
+            format=message.format,
+            byte_len=len(raw),
+            width=message.width,
+            height=message.height,
+            received_mono=time.perf_counter(),
+            dropped=dropped,
+        )
+        self.video_meta.append(meta)
+        self.video_frames_accepted += 1
+        # Keep only the latest decoded frame for optional proctor hooks (memory-bounded).
+        self.last_video_bytes = raw or None
+        if self.video_frames_accepted == 1 or self.video_frames_accepted % 25 == 0:
+            logger.info(
+                "video_chunk interview=%s seq=%s format=%s bytes=%s accepted=%s dropped=%s",
+                self.session.interview_id,
+                message.seq,
+                message.format,
+                len(raw),
+                self.video_frames_accepted,
+                self.video_frames_dropped,
+            )
+        # Yield so audio turn tasks scheduled on this loop are not starved.
+        await asyncio.sleep(0)
 
     async def handle_text_input(self, message: TextInputMessage) -> None:
         self._spawn_turn(

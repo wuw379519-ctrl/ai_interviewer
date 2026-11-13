@@ -12,6 +12,8 @@ from interviewer.realtime.protocol import (
     CLIENT_TYPES,
     MAX_AUDIO_CHUNK_BASE64_CHARS,
     MAX_AUDIO_CHUNK_PCM_BYTES,
+    MAX_VIDEO_FRAME_BASE64_CHARS,
+    MAX_VIDEO_FRAME_BYTES,
     PROTOCOL_VERSION,
     SERVER_TYPES,
 )
@@ -28,6 +30,8 @@ def main() -> None:
 export const REALTIME_PROTOCOL_VERSION = "{PROTOCOL_VERSION}" as const;
 export const REALTIME_MAX_AUDIO_CHUNK_PCM_BYTES = {MAX_AUDIO_CHUNK_PCM_BYTES} as const;
 export const REALTIME_MAX_AUDIO_CHUNK_BASE64_CHARS = {MAX_AUDIO_CHUNK_BASE64_CHARS} as const;
+export const REALTIME_MAX_VIDEO_FRAME_BYTES = {MAX_VIDEO_FRAME_BYTES} as const;
+export const REALTIME_MAX_VIDEO_FRAME_BASE64_CHARS = {MAX_VIDEO_FRAME_BASE64_CHARS} as const;
 
 export type RealtimeClientType = {client};
 export type RealtimeServerType = {server};
@@ -36,6 +40,7 @@ export type RealtimeClientMessage =
   | {{ v: typeof REALTIME_PROTOCOL_VERSION; type: "auth"; token: string; resumeFromSeq?: number }}
   | {{ v: typeof REALTIME_PROTOCOL_VERSION; type: "start" }}
   | {{ v: typeof REALTIME_PROTOCOL_VERSION; type: "audio_chunk"; seq: number; pcmBase64?: string; format?: "pcm16le_16k" }}
+  | {{ v: typeof REALTIME_PROTOCOL_VERSION; type: "video_chunk"; seq: number; frameBase64?: string; format?: "jpeg" | "webp"; width?: number; height?: number; t?: number }}
   | {{ v: typeof REALTIME_PROTOCOL_VERSION; type: "text_input"; text: string; idempotencyKey: string; expectedQuestionSeq?: number }}
   | {{ v: typeof REALTIME_PROTOCOL_VERSION; type: "end_turn"; idempotencyKey?: string }}
   | {{ v: typeof REALTIME_PROTOCOL_VERSION; type: "interrupt" }}
@@ -45,6 +50,7 @@ export type RealtimeClientMessage =
 
 export type RealtimeServerMessage =
   | {{ v: typeof REALTIME_PROTOCOL_VERSION; type: "ready"; interviewId: string; tenantBound?: boolean; status: string; resumeFromSeq: number; protocolVersion?: string }}
+  | {{ v: typeof REALTIME_PROTOCOL_VERSION; type: "avatar_ready"; mode?: "audio_only" | "avatar_placeholder"; detail?: Record<string, unknown> }}
   | {{ v: typeof REALTIME_PROTOCOL_VERSION; type: "question"; questionSeq: number; text: string; intent?: string }}
   | {{ v: typeof REALTIME_PROTOCOL_VERSION; type: "partial_transcript"; text: string }}
   | {{ v: typeof REALTIME_PROTOCOL_VERSION; type: "final_transcript"; text: string }}

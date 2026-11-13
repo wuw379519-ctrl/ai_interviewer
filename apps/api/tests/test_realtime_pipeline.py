@@ -97,7 +97,15 @@ def _auth(ws: object, token: str, resume: int = 0) -> dict[str, object]:
     }))
     ready = json.loads(ws.receive_text())  # type: ignore[attr-defined]
     assert ready["type"] == "ready"
-    return ready
+    # D80: optional event_replay then avatar_ready.
+    for _ in range(8):
+        msg = json.loads(ws.receive_text())  # type: ignore[attr-defined]
+        if msg["type"] == "avatar_ready":
+            return ready
+        if msg["type"] == "event_replay":
+            continue
+        raise AssertionError(f"unexpected post-auth message: {msg.get('type')}")
+    raise AssertionError("avatar_ready not received")
 
 
 def _drain_until(ws: object, typ: str, limit: int = 40) -> dict[str, object]:
@@ -344,6 +352,43 @@ def test_audio_chunk_seq_must_increase(tmp_path: Path) -> None:
             ws.send_text(json.dumps({"v": "aii-ws-v1", "type": "audio_chunk", "seq": 0, "pcmBase64": pcm}))
             err = _drain_until(ws, "error")
             assert err["code"] == "VALIDATION_FAILED"
+
+
+def test_video_chunk_accepted_without_blocking_audio_turn(tmp_path: Path) -> None:
+    """D80: high-rate video_chunk must not prevent ASR/TTS path from completing."""
+    with _app_client(tmp_path) as client:
+        interview_id, token, _ = _seed_interviewing(client)
+        tiny = base64.b64encode(b"\xff\xd8\xff\xd9").decode("ascii")  # minimal JPEG-ish bytes
+        with client.websocket_connect(f"/ws/interview/{interview_id}") as ws:
+            _auth(ws, token)
+            for seq in range(12):
+                ws.send_text(json.dumps({
+                    "v": "aii-ws-v1",
+                    "type": "video_chunk",
+                    "seq": seq,
+                    "frameBase64": tiny,
+                    "format": "jpeg",
+                    "width": 160,
+                    "height": 120,
+                }))
+            live = client.app.state.session_store.get(interview_id)
+            assert live and live.pipeline
+            assert live.pipeline.video_frames_accepted >= 8
+            assert live.pipeline.video_frames_dropped >= 1
+            assert live.pipeline.last_video_bytes is not None
+            ws.send_text(json.dumps({
+                "v": "aii-ws-v1",
+                "type": "text_input",
+                "text": "我主导了实验模块，个人负责实现，将耗时降低30%。",
+                "idempotencyKey": "ws-video-" + uuid4().hex,
+            }))
+            question = _drain_until(ws, "question")
+            assert question["text"]
+            tts = _drain_until(ws, "tts_chunk")
+            assert tts.get("audioBase64")
+            sample = live.pipeline.last_latency
+            assert sample is not None and sample.asr_first_ms is not None
+            assert sample.asr_first_ms < 300.0
 
 
 def test_pcm16le_to_wav_header() -> None:

@@ -15,6 +15,7 @@ from interviewer.realtime.pipeline import RealtimePipeline
 from interviewer.proctoring import append_proctor_log
 from interviewer.realtime.protocol import (
     AuthMessage,
+    AvatarReadyMessage,
     CloseMessage,
     EndTurnMessage,
     ErrorMessage,
@@ -28,6 +29,7 @@ from interviewer.realtime.protocol import (
     StateChangedMessage,
     TextInputMessage,
     AudioChunkMessage,
+    VideoChunkMessage,
     dump_server_message,
     parse_client_json,
 )
@@ -99,6 +101,13 @@ def build_realtime_router(store: SessionStore) -> APIRouter:
 
             pipeline = RealtimePipeline(service=service, session=live, send=send_locked)
             live.pipeline = pipeline
+            # D80: placeholder avatar surface — digital-human video can plug in later.
+            await send_locked(
+                AvatarReadyMessage(
+                    mode="avatar_placeholder",
+                    detail={"interviewId": interview_id, "tts": "tts_chunk"},
+                )
+            )
 
             while True:
                 text = await websocket.receive_text()
@@ -122,6 +131,9 @@ def build_realtime_router(store: SessionStore) -> APIRouter:
                     continue
                 if isinstance(message, AudioChunkMessage):
                     await pipeline.handle_audio_chunk(message)
+                    continue
+                if isinstance(message, VideoChunkMessage):
+                    await pipeline.handle_video_chunk(message)
                     continue
                 if isinstance(message, EndTurnMessage):
                     await pipeline.handle_end_turn(message)

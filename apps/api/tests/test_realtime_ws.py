@@ -85,6 +85,7 @@ def test_ws_auth_ping_and_resume(tmp_path: Path) -> None:
             replay = json.loads(ws.receive_text())
             assert replay["type"] == "event_replay"
             assert len(replay["events"]) >= 2
+            assert json.loads(ws.receive_text())["type"] == "avatar_ready"
             ws.send_text(json.dumps({"v": "aii-ws-v1", "type": "ping", "t": 42}))
             pong = json.loads(ws.receive_text())
             assert pong["type"] == "pong" and pong["t"] == 42
@@ -139,6 +140,7 @@ def test_ws_second_connection_supersedes(tmp_path: Path) -> None:
         with client.websocket_connect(f"/ws/interview/{interview_id}") as ws1:
             ws1.send_text(auth)
             assert json.loads(ws1.receive_text())["type"] == "ready"
+            assert json.loads(ws1.receive_text())["type"] == "avatar_ready"
             first_conn = client.app.state.session_store.get(interview_id)
             assert first_conn is not None
             first_id = first_conn.connection_id
@@ -146,6 +148,7 @@ def test_ws_second_connection_supersedes(tmp_path: Path) -> None:
             with client.websocket_connect(f"/ws/interview/{interview_id}") as ws2:
                 ws2.send_text(auth)
                 assert json.loads(ws2.receive_text())["type"] == "ready"
+                assert json.loads(ws2.receive_text())["type"] == "avatar_ready"
                 second = client.app.state.session_store.get(interview_id)
                 assert second is not None
                 assert second.connection_id != first_id

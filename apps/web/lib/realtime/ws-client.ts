@@ -95,14 +95,16 @@ export class InterviewWsClient {
     });
   }
 
-  /** Enqueue if not open; otherwise send immediately. Ping/close/proctor bypass the offline queue. */
+  /** Enqueue if not open; otherwise send immediately. Ping/close/proctor/video bypass the offline queue. */
   send(message: RealtimeClientMessage): void {
     if (
       message.type === "ping"
       || message.type === "close"
       || message.type === "auth"
       || message.type === "proctor_signal"
+      || message.type === "video_chunk"
     ) {
+      // High-rate video frames: drop while offline rather than ballooning the queue.
       this.sendNow(message);
       return;
     }

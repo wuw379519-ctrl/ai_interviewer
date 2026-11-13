@@ -49,3 +49,24 @@ def test_server_ready_dumps_aliases() -> None:
         ReadyMessage(interviewId="00000000-0000-4000-8000-000000000099", status="interviewing", resumeFromSeq=2)
     )
     assert "interviewId" in raw and "resumeFromSeq" in raw
+
+
+def test_video_chunk_and_avatar_ready() -> None:
+    frame = "aGVsbG8="  # "hello"
+    msg = parse_client_json(
+        '{"v":"aii-ws-v1","type":"video_chunk","seq":1,'
+        f'"frameBase64":"{frame}","format":"jpeg","width":320,"height":240}}'
+    )
+    assert msg.type == "video_chunk"
+    assert msg.seq == 1
+    assert msg.format == "jpeg"
+    from interviewer.realtime.protocol import AvatarReadyMessage
+
+    dumped = dump_server_message(AvatarReadyMessage(mode="avatar_placeholder"))
+    assert "avatar_ready" in dumped
+    with pytest.raises(ValidationError):
+        parse_client_json(
+            '{"v":"aii-ws-v1","type":"video_chunk","seq":0,"frameBase64":"'
+            + ("A" * 200_001)
+            + '","format":"jpeg"}'
+        )

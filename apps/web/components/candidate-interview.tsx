@@ -8,6 +8,7 @@ import { createLocalRecognition } from "@/lib/browser-speech";
 import { useInterviewDevices, deviceStatus } from "./use-interview-devices";
 import { useInterviewSpeech } from "./use-interview-speech";
 import { InterviewMediaPanel } from "./interview-media-panel";
+import { VideoInterviewRoom } from "./video-interview-room";
 import { usePlaybackInterruption } from "./use-playback-interruption";
 import { useProctorSignals } from "@/lib/proctor/use-proctor-signals";
 
@@ -201,6 +202,15 @@ export function CandidateInterview({ id }: { id: string }) {
         error={devices.error || speech.error} disabled={busy || !online}
         onCheck={() => void run(() => checkDevices())} onRelease={() => void pauseAndRelease()}
         onFallback={() => void fallback()} onInstall={() => void speech.install()} />}
+      {view.cameraRequired && active && !view.pausedAt && token && (
+        <VideoInterviewRoom
+          interviewId={id}
+          token={token}
+          stream={devices.stream}
+          enabled={Boolean(online && mediaReady)}
+          fps={5}
+        />
+      )}
       {active && <>
         {view.recruitmentTrack === "graduate_campus" && <p className="notice">研究生校招 · 固定必问已触达 {view.mandatoryAsked}/{view.mandatoryTotal}。CET-4 ≥425分、研究生期间无挂科，待招聘者人工核验证明。{formalCampus ? "资格题须作答，暂不确定可填写待核验。其他题可跳过。" : "可以跳过不愿回答的问题。"}</p>}
         <div className="interview-toolbar"><div><span className={`connection-dot ${online ? "" : "offline"}`} /><span>{online ? "已连接 · 服务端保存进度" : "正在恢复连接"}</span></div><span className="timer" aria-label="剩余时间">{view.pausedAt ? "已暂停 · " : "剩余 "}{Math.floor(remaining / 60).toString().padStart(2, "0")}:{(remaining % 60).toString().padStart(2, "0")}</span></div>
@@ -221,6 +231,6 @@ export function CandidateInterview({ id }: { id: string }) {
       {completed && <section className="panel candidate-card completion"><span className="success-symbol">✓</span><p className="eyebrow">CONVERSATION COMPLETE</p><h2>感谢分享，这次对话已保存。</h2><p>你已经完成本场面试。后续评估由招聘者复核，AI 不会自动作出录用或淘汰决定。</p><div className="notice"><p>本次面试已进入评分阶段。招聘者可生成带原文证据的报告并进行人工复核；请等待招聘者沟通下一步。</p></div><button className="text-button" disabled={busy} onClick={() => setConfirm("withdraw")}>撤回本次面试同意</button></section>}
     </>}
     {confirm && <div className="modal-backdrop"><section ref={modalRef} className="panel confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title"><h2 id="confirm-title">{confirm === "withdraw" ? "撤回本次面试同意？" : "现在结束本场面试？"}</h2><p>{confirm === "withdraw" ? "撤回后立即停止采集，专属链接将失效。你仍可以联系招聘者提出删除已有数据的请求。" : "结束后无法继续回答，已提交的内容会保留供评估使用。"}</p><div className="button-row"><button autoFocus className="button secondary" onClick={() => setConfirm(null)}>返回</button><button className="button primary" disabled={busy} onClick={() => void close(confirm)}>{busy ? "处理中…" : confirm === "withdraw" ? "确认撤回" : "确认结束"}</button></div></section></div>}
-    <p className="candidate-footnote">{view?.formalText ? "本场仅记录主动提交的文字回答。" : "不做人脸、表情、情绪、视线或声纹分析。摄像头画面仅本地预览，不上传、不录像。"}</p>
+    <p className="candidate-footnote">{view?.formalText ? "本场仅记录主动提交的文字回答。" : view?.cameraRequired ? "不做人脸、表情、情绪、视线或声纹分析。开启摄像头时，低频 JPEG 帧经加密通道发送供防作弊扩展；不做自动录用/淘汰。" : "不做人脸、表情、情绪、视线或声纹分析。摄像头画面仅本地预览，不上传、不录像。"}</p>
   </main></div>;
 }

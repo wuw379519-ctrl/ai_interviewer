@@ -14,13 +14,16 @@ PROTOCOL_VERSION = "aii-ws-v1"
 # D75: keep base64 JSON frames; 1s of PCM16LE @ 16kHz mono = 32000 bytes.
 MAX_AUDIO_CHUNK_PCM_BYTES = 32_000
 MAX_AUDIO_CHUNK_BASE64_CHARS = 44_000
+# D80: JPEG/WebP still frames over WS JSON (not WebRTC). ~150KB decoded upper bound.
+MAX_VIDEO_FRAME_BYTES = 150_000
+MAX_VIDEO_FRAME_BASE64_CHARS = 200_000
 
 ClientType = Literal[
-    "auth", "start", "audio_chunk", "text_input", "end_turn", "interrupt",
+    "auth", "start", "audio_chunk", "video_chunk", "text_input", "end_turn", "interrupt",
     "proctor_signal", "ping", "close",
 ]
 ServerType = Literal[
-    "ready", "question", "partial_transcript", "final_transcript", "tts_chunk",
+    "ready", "avatar_ready", "question", "partial_transcript", "final_transcript", "tts_chunk",
     "interrupted", "error", "pong", "state_changed", "event_replay",
 ]
 
@@ -53,6 +56,24 @@ class AudioChunkMessage(Envelope):
         max_length=MAX_AUDIO_CHUNK_BASE64_CHARS,
     )
     format: Literal["pcm16le_16k"] = "pcm16le_16k"
+
+    model_config = {"populate_by_name": True}
+
+
+class VideoChunkMessage(Envelope):
+    """Candidate camera still frame as base64 JPEG/WebP (D80 — not assessment content)."""
+
+    type: Literal["video_chunk"] = "video_chunk"
+    seq: int = Field(ge=0)
+    frame_base64: str | None = Field(
+        default=None,
+        alias="frameBase64",
+        max_length=MAX_VIDEO_FRAME_BASE64_CHARS,
+    )
+    format: Literal["jpeg", "webp"] = "jpeg"
+    width: int | None = Field(default=None, ge=1, le=1920)
+    height: int | None = Field(default=None, ge=1, le=1080)
+    t: int | None = None
 
     model_config = {"populate_by_name": True}
 
@@ -102,7 +123,7 @@ class CloseMessage(Envelope):
 
 
 ClientMessage = Annotated[
-    AuthMessage | StartMessage | AudioChunkMessage | TextInputMessage
+    AuthMessage | StartMessage | AudioChunkMessage | VideoChunkMessage | TextInputMessage
     | EndTurnMessage | InterruptMessage | ProctorSignalMessage | PingMessage | CloseMessage,
     Field(discriminator="type"),
 ]
@@ -117,6 +138,14 @@ class ReadyMessage(Envelope):
     protocol_version: str = Field(default=PROTOCOL_VERSION, alias="protocolVersion")
 
     model_config = {"populate_by_name": True}
+
+
+class AvatarReadyMessage(Envelope):
+    """AI interviewer presentation surface is ready (placeholder / digital human later)."""
+
+    type: Literal["avatar_ready"] = "avatar_ready"
+    mode: Literal["audio_only", "avatar_placeholder"] = "avatar_placeholder"
+    detail: dict[str, object] = Field(default_factory=dict)
 
 
 class QuestionMessage(Envelope):
@@ -178,9 +207,9 @@ class EventReplayMessage(Envelope):
 
 
 ServerMessage = Annotated[
-    ReadyMessage | QuestionMessage | PartialTranscriptMessage | FinalTranscriptMessage
-    | TtsChunkMessage | InterruptedMessage | ErrorMessage | PongMessage
-    | StateChangedMessage | EventReplayMessage,
+    ReadyMessage | AvatarReadyMessage | QuestionMessage | PartialTranscriptMessage
+    | FinalTranscriptMessage | TtsChunkMessage | InterruptedMessage | ErrorMessage
+    | PongMessage | StateChangedMessage | EventReplayMessage,
     Field(discriminator="type"),
 ]
 
@@ -209,10 +238,10 @@ def client_validation_error(text: str) -> str | None:
 
 
 CLIENT_TYPES: tuple[str, ...] = (
-    "auth", "start", "audio_chunk", "text_input", "end_turn", "interrupt",
+    "auth", "start", "audio_chunk", "video_chunk", "text_input", "end_turn", "interrupt",
     "proctor_signal", "ping", "close",
 )
 SERVER_TYPES: tuple[str, ...] = (
-    "ready", "question", "partial_transcript", "final_transcript", "tts_chunk",
+    "ready", "avatar_ready", "question", "partial_transcript", "final_transcript", "tts_chunk",
     "interrupted", "error", "pong", "state_changed", "event_replay",
 )

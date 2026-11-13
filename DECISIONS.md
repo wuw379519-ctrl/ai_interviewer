@@ -1073,6 +1073,25 @@ Docker 等价思路：起一次性 Postgres 容器，设 `TEST_DATABASE_URL`/`DA
 | D77 | Task 7 proctor / riskItems |
 | D78 | Task 8a compose/Celery/sticky |
 | D79 | Task 8b 收尾备忘（本条） |
+| D80 | Task 9a 视频语音面试帧传输 |
 
-编号连续：D67→D79 无跳号、无重复。Task 1–8 均有对应 D 条目（Task 顺序与 D 编号不完全同序：Gateway D71 早于租户 D72，以交付顺序为准）。
+编号连续：D67→D80 无跳号、无重复。Task 1–8 均有对应 D 条目（Task 顺序与 D 编号不完全同序：Gateway D71 早于租户 D72，以交付顺序为准）。
+
+## D80 Task 9a：视频语音面试（帧传输与前端渲染）
+
+**状态**：已落地（Task 9a）
+
+**日期**：2026-11-13
+
+**设计源**：`docs/ai-interviewer-architecture.md` §实时链路 / 数字人占位；实现以本决策为准。
+
+**协议（`realtime/protocol.py` → `packages/core/src/realtime-protocol.ts`）**：
+- C→S：`video_chunk`（`frameBase64` JPEG/WebP，`seq` 递增；上限约 150KB 解码 / 200k base64 字符）。**不做 WebRTC**（初期降低复杂度）。
+- S→C：`avatar_ready`（`mode=avatar_placeholder`）；`tts_chunk` 继续音频回推。
+
+**后端**：`RealtimePipeline.handle_video_chunk` 独立于 ASR/LLM/TTS；元数据环长 8（丢最旧）、只保留最新一帧字节作防作弊扩展点；`asyncio.sleep(0)` 让出事件循环。帧**不**当作评估指令、**不**自动调分。
+
+**前端**：`VideoInterviewRoom` — `getUserMedia` / 复用设备流、本机预览、Canvas≈5fps 截帧经 `InterviewWsClient` 发送；AI 主展示区为占位。可选 MediaRecorder 整段上传**本轮不做**（仅帧通道）。
+
+**已知限制**：非 WebRTC，带宽与清晰度有限；数字人口型驱动未做；帧默认进程内短留，不落 durable blob；生产需另定保留期与删除策略。
 
