@@ -28,9 +28,20 @@ def main() -> int:
         errors.append("apps/api/docker-entrypoint.sh missing")
     else:
         entry = ENTRYPOINT.read_text(encoding="utf-8")
-        for token in ("celery", "--beat", "interviewer.cli migrate", "wait_postgres"):
+        for token in (
+            "celery",
+            "--beat",
+            "interviewer.cli migrate",
+            "wait_postgres",
+            "MIGRATE_DATABASE_URL",
+            "aii_app",
+        ):
             if token not in entry:
                 errors.append(f"entrypoint missing token {token!r}")
+        if "aii_app:aii_app_dev_only" not in text:
+            errors.append("api/worker DATABASE_URL must use aii_app (NOBYPASSRLS) for /api/ready")
+        if "MIGRATE_DATABASE_URL" not in text:
+            errors.append("MIGRATE_DATABASE_URL missing for superuser migrate")
         if "command: [\"api\"]" not in text and "command: ['api']" not in text:
             # Accept either quoting style for the api service command.
             if not re.search(r"command:\s*\[\s*[\"']api[\"']\s*\]", text):

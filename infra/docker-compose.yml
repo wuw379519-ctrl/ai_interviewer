@@ -44,8 +44,10 @@ services:
     environment:
       APP_ENV: development
       DB_DRIVER: postgres
-      # Dev compose uses superuser for migrate convenience; production MUST switch to aii_app (NOBYPASSRLS).
-      DATABASE_URL: postgresql+psycopg://postgres:postgres_dev_only@postgres:5432/aii
+      # Runtime uses aii_app (NOSUPERUSER NOBYPASSRLS) so /api/ready can pass.
+      # Migrate uses superuser via MIGRATE_DATABASE_URL, then grants table rights to aii_app.
+      DATABASE_URL: postgresql+psycopg://aii_app:aii_app_dev_only@postgres:5432/aii
+      MIGRATE_DATABASE_URL: postgresql+psycopg://postgres:postgres_dev_only@postgres:5432/aii
       REDIS_URL: redis://redis:6379/0
       LLM_PROVIDER: fake
       DEMO_MODE: "true"
@@ -57,7 +59,7 @@ services:
       FEISHU_ENCRYPT_KEY: ""
     ports:
       - "8000:8000"
-    # Ready (not /api/health): surfaces POSTGRES_RLS_ROLE_BYPASS in non-prod.
+    # Ready (not /api/health): surfaces POSTGRES_RLS_ROLE_BYPASS if runtime role is unsafe.
     healthcheck:
       test:
         [
@@ -89,7 +91,7 @@ services:
     environment:
       APP_ENV: development
       DB_DRIVER: postgres
-      DATABASE_URL: postgresql+psycopg://postgres:postgres_dev_only@postgres:5432/aii
+      DATABASE_URL: postgresql+psycopg://aii_app:aii_app_dev_only@postgres:5432/aii
       REDIS_URL: redis://redis:6379/0
       LLM_PROVIDER: fake
       DEMO_MODE: "true"

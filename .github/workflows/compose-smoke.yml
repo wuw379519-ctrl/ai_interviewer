@@ -61,10 +61,10 @@ jobs:
             echo "===== worker logs ====="
             docker compose -f infra/docker-compose.yml logs worker --no-color --tail=80 || true
           } | tee compose-failure.txt
-          # Surface into job annotations (readable on the Actions summary).
-          while IFS= read -r line; do
+          # Keep failure context in the step log; only mark the last lines as errors.
+          tail -n 40 compose-failure.txt | while IFS= read -r line; do
             echo "::error::compose $line"
-          done < compose-failure.txt || true
+          done || true
       - name: Wait for api /api/ready
         run: |
           set -e
