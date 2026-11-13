@@ -1,6 +1,15 @@
-# 研究生校招 AI 面试官 · Python 版
+# 研究生校招 AI 面试官 · 视频语音多模态防作弊版
 
-本仓库包含 Next.js 招聘工作台、FastAPI 后端和终端面试工具。FastAPI 负责结构化面试、证据评分、报告、人工改分、审计和数据删除，默认用 SQLite 和 fake 模型。API 和 CLI 也可独立运行。
+本仓库包含 Next.js 招聘工作台、FastAPI 后端和终端面试工具。FastAPI 负责结构化面试、实时视频/语音通道、证据评分、报告、人工改分、审计、数据删除，以及**视频语音多模态防作弊**（过程信号 + 轻量人脸检测 → `riskItems`，仅供人工复核）。默认用 SQLite 和 fake 模型；API 与 CLI 也可独立运行。
+
+## 功能特性
+
+- **结构化面试**：知情同意、固定/生成题单、追问与收尾、刷新可恢复当前题。
+- **证据评分与报告**：逐题原话证据、人工改分与审计；AI 建议不自动录用/淘汰。
+- **实时通道（WS）**：文字 / 音频分片 / 视频帧（JPEG≈5fps）→ ASR → 编排 → TTS；VAD 打断；断线重连顶替。
+- **视频通话（Task 9a）**：`VideoInterviewRoom` 本机预览 + AI 主展示占位；摄像头权限拒绝 / 拔出有 UI 降级；约 10s 无帧服务端 `camera_stall` 通知。
+- **多模态防作弊闭环（Task 9b）**：切屏/失焦/`camera_lost` + 音频静音/音量 + `VisionDetector` 人脸观察（`no_face` / `multi_face`）写入 `proctor_logs`，融合为报告 `riskItems`（`affectsScore=false`）。CI 用 `FakeVisionDetector`，不引入重度 DL，不长期存原始帧。
+- **多租户与运维**：Postgres RLS、Celery 清理、Compose（postgres/redis/api/worker）、飞书接入骨架。
 
 ## 准备 Python 3.11 环境
 
@@ -133,22 +142,58 @@ docker compose -f infra/docker-compose.yml ps
 # 期望 api healthy（ready）；worker 运行中
 ```
 
-**Compose 实起证据（已解决）**：GitHub Actions workflow **`Compose smoke`** 在 commit **`271a7a1`**（`fix(ci): tolerate delayed celery worker log markers`）全绿——migrate、`/api/ready`、worker 进程均通过。本地无 Docker 时仍以 `compose.validate.py` + 该 CI 工作流为验收依据。
+**Compose 实起证据（已解决）**：GitHub Actions workflow **`Compose smoke`** 持续全绿（例：`271a7a1` 起、Task 9b `a718d60` 等）——migrate、`/api/ready`、worker 进程均通过。本地无 Docker 时仍以 `compose.validate.py` + 该 CI 工作流为验收依据。
 
-**已知限制（Task 8a/8b）**：Sticky 失效靠 `event_replay` 续场（可能丢未落库 turn）；跨 worker 双活靠 DB seq 唯一约束兜底（防撞号，不保证跨进程 turn 顺序）。`data_policies` 非 default 租户未做。能量 VAD 可能误触发。熔断为进程内。生产 sticky 方案待定。详见 [D79](DECISIONS.md#d79-task-8b收尾备忘结论与索引)。
+**已知限制（Task 8a/8b / 9）**：Sticky 失效靠 `event_replay` 续场（可能丢未落库 turn）；跨 worker 双活靠 DB seq 唯一约束兜底（防撞号，不保证跨进程 turn 顺序）。`data_policies` 非 default 租户未做。能量 VAD 可能误触发。熔断为进程内。生产 sticky 方案待定。视频非 WebRTC、人脸检测为轻量/可打桩。详见 [D79](DECISIONS.md#d79-task-8b收尾备忘结论与索引)/[D81](DECISIONS.md#d81-task-9b多模态防作弊架构与-visiondetector-抽象)。
 
-### 项目收尾摘要（Task 1–8）
+### 项目收尾摘要（Task 1–9）
 
 **端点 / 协议（节选）**
 - Task 3：`GET /api/admin/interviews/{id}/events`（`interview_events` 回放）
-- Task 6：`WS /ws/interview/{session_id}`（**不进 OpenAPI**；paths 仍以 REST 计）
-- Task 7：报告 `riskItems`；WS `proctor_signal`（无新 REST 端点）
+- Task 6 / 9a：`WS /ws/interview/{session_id}`（含 `video_chunk` / `avatar_ready`；**不进 OpenAPI**；paths 仍以 REST 计）
+- Task 7 / 9b：报告 `riskItems`；WS `proctor_signal`（切屏 + `camera_lost` 等；无新 REST 端点）
 - OpenAPI：`pnpm api:openapi` → `docs/openapi.json`（约 **44** paths）
 
-**命令**
+**本地启动（摘要）**
+```powershell
+$py = '.\.venv-clean\Scripts\python.exe'
+$env:PYTHONPATH = 'apps/api'
+$env:LLM_PROVIDER = 'fake'
+& $py -m interviewer.cli migrate
+& $py -m interviewer.cli seed
+# API  alone：
+& $py -m uvicorn interviewer.main:app --host 127.0.0.1 --port 8000
+# 或联合启动工作台：
+$env:PYTHON_EXECUTABLE = (Resolve-Path '.\.venv-clean\Scripts\python.exe').Path
+pnpm install
+pnpm dev   # → http://127.0.0.1:3000/login
+```
+
+**测试 / 构建**
+```powershell
+$py = '.\.venv-clean\Scripts\python.exe'
+$env:PYTHONPATH = 'apps/api'
+$env:LLM_PROVIDER = 'fake'
+$env:PYTHON_EXECUTABLE = (Resolve-Path '.\.venv-clean\Scripts\python.exe').Path
+# Python 三门禁
+& $py -m ruff check --config apps/api/pyproject.toml apps/api scripts
+& $py -m mypy --config-file apps/api/pyproject.toml apps/api/interviewer scripts
+& $py -m pytest -c apps/api/pyproject.toml apps/api/tests
+# 前端 + 联合（含 vitest 与上述 pytest）
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+# 或一次跑齐：pnpm verify
+pnpm api:openapi   # 覆盖 docs/openapi.json
+```
+
+**Docker Compose**
 ```powershell
 python infra/compose.validate.py
 docker compose -f infra/docker-compose.yml up --build -d
+docker compose -f infra/docker-compose.yml ps
+# 期望 api healthy（/api/ready）；worker 运行中
 $env:CELERY_TASK_ALWAYS_EAGER='true'; $env:PYTHONPATH='apps/api'
 & .\.venv-clean\Scripts\python.exe -c "from interviewer.workers.tasks_cleanup import run_retention_cleanup; print(run_retention_cleanup(dry_run=True))"
 # failover：pytest apps/api/tests/test_failover_drill.py；说明见 docs/ops/failover-drill.md
@@ -158,7 +203,7 @@ $env:CELERY_TASK_ALWAYS_EAGER='true'; $env:PYTHONPATH='apps/api'
 
 **迁移总览**：Postgres `0000`–`0016`；SQLite `0001`–`0009`（含 tenants、events、ai_usage、proctor_logs、视觉 signal_type、RLS）。
 
-**决策索引**：D67–D81 见 [DECISIONS.md](DECISIONS.md)（Task 8b=D79，Task 9a=D80，Task 9b=D81）。
+**决策索引**：文首全量 **D1–D81** 与交付阶段 **D67–D81** 见 [DECISIONS.md](DECISIONS.md)（Task 8b=D79，Task 9a=D80，Task 9b=D81 VisionDetector）。
 
 ### AI Gateway（配置）
 
@@ -215,7 +260,7 @@ fake 模型生成确定性演示评价，请使用合成资料。正式使用时
 在本机 PowerShell 执行。把 `interview.example.com` 换成你配置的域名。
 
 ```powershell
-Set-Location D:\work\ai_interviewer_python
+# 在仓库根目录执行
 $env:PYTHON_EXECUTABLE = (Resolve-Path '.\.venv-clean\Scripts\python.exe').Path
 node scripts/dev.mjs --show-admin
 pnpm build
@@ -236,7 +281,7 @@ node scripts/dev.mjs --public-url https://interview.example.com
 终端一启动后端。
 
 ```powershell
-Set-Location D:\work\ai_interviewer_python
+# 在仓库根目录执行
 $py = '.\.venv-clean\Scripts\python.exe'
 $env:PYTHONPATH = 'apps/api'
 $env:APP_ENV = 'development'
@@ -254,7 +299,7 @@ $env:TTS_PROVIDER = 'local'
 终端二启动静态页面。
 
 ```powershell
-Set-Location D:\work\ai_interviewer_python
+# 在仓库根目录执行
 & .\.venv-clean\Scripts\python.exe -m http.server 5173 --bind 127.0.0.1 --directory apps/practice
 ```
 
@@ -262,13 +307,22 @@ Set-Location D:\work\ai_interviewer_python
 
 `fake` 模式用于本地演示。连接已获准的内网 OpenAI 兼容模型时，将终端一的 `LLM_PROVIDER` 改为 `internal`，在后端 `.env` 配置 `LLM_BASE_URL`、`LLM_MODEL` 及网关所需的 `LLM_API_KEY`。可选 `LLM_MODEL_NAME` 覆盖对话模型名。模型密钥只由后端读取。使用 `STT_PROVIDER=auto` 可运行纯文字版。
 
-## Python 验证
+## Python / 全仓验证
 
 ```powershell
+$py = '.\.venv-clean\Scripts\python.exe'
+$env:PYTHONPATH = 'apps/api'
+$env:LLM_PROVIDER = 'fake'
+$env:PYTHON_EXECUTABLE = (Resolve-Path '.\.venv-clean\Scripts\python.exe').Path
 & $py -m ruff check --config apps/api/pyproject.toml apps/api scripts
 & $py -m mypy --config-file apps/api/pyproject.toml apps/api/interviewer scripts
 & $py -m pytest -c apps/api/pyproject.toml apps/api/tests
 & $py -m interviewer.cli evals
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+# 等价一次门禁：pnpm verify
 ```
 
-PostgreSQL 测试需要明确指定可丢弃的 `TEST_DATABASE_URL`。Python 服务镜像配置位于 `apps/api/Dockerfile`，本机运行可直接使用上述 Uvicorn 命令。
+PostgreSQL 测试需要明确指定可丢弃的 `TEST_DATABASE_URL`。Python 服务镜像配置位于 `apps/api/Dockerfile`，本机运行可直接使用上文「在本机启动」中的 Uvicorn 命令。Compose 见「项目收尾摘要」中的 Docker Compose 小节。

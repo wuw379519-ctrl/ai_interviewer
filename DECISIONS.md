@@ -2,6 +2,94 @@
 
 技术裁决记录。每条：决策 / 理由 / 影响 / 回退方式。改结论请新增条目，不要改写历史条目。
 
+**编号连续性**：正文含 **D1–D81**，共 81 条，无跳号、无重复。正文按历史追加顺序排列（故 D17 可能早于 D1 出现）；查阅请用下方全量索引。交付阶段索引见 [D79](#d79-task-8b收尾备忘结论与索引)（D67–D81）。
+
+### 全量索引（D1–D81）
+
+| D | 主题 |
+| --- | --- |
+| D1 | 数据库默认用 PGlite，Docker + Postgres 16 作为可选路径 |
+| D2 | 维度权重用万分比整数存（`weight_bp`），不用浮点 |
+| D3 | 增加 `cancelled` 状态（规格 9 态 → 10 态） |
+| D4 | 增加 `score_revisions` 表（规格最小集之外） |
+| D5 | workspace 包以 TS 源码被消费，不产出 `dist` |
+| D6 | 枚举列一律用 `text` + `$type<>`，不用 pg enum |
+| D7 | 评分证据一致性做成数据库 check，而不是只靠应用层 |
+| D8 | lint 统一在根目录，`next build` 跳过自带 lint |
+| D9 | 本机 pnpm 通过本地 shim 安装（非全局） |
+| D10 | 邀请令牌 / 题目计划版本 / 保留期到期：M1 补的四个模型缺口 |
+| D11 | 保留期分对象：transcript 90 天，报告口径待业务签认 |
+| D12 | 不设成本闸（G3 已拍板：不设） |
+| D13 | LLM 走内网自建模型（G4 已拍板） |
+| D14 | PGlite 必须对 Next 打包外部化 |
+| D15 | 题量按档位分配，「≥8 题」只在 30 分钟档验收（G2 默认口径） |
+| D16 | 面试中的追问由确定性规则决定，不在面试中调模型 |
+| D17 | 本轮基于已有仓库核验 M0/M1 |
+| D18 | M1：数据库也强制证据、同意和 90 天默认保留期 |
+| D19 | M1：事务、种子数据与隐私验证 |
+| D20 | M2：恢复原始题量要求与岗位可比性 |
+| D21 | M2：身份、同意、恢复与写入一致性 |
+| D22 | M2：简历解析、交互与新增依赖 |
+| D23 | 提前接入语音面试与本地摄像头要求 |
+| D24 | 语音隐私与降级：不引入新的依赖 |
+| D25 | 本轮验证与在线开发缓存隔离 |
+| D26 | M3：逐题原文校验与保守聚合 |
+| D27 | M3：事务执行、认证与审计 |
+| D28 | M3：两页打印与费用口径 |
+| D29 | M3：评估边界与回归 |
+| D30 | 研究生校招：固定必问与独立资格事实 |
+| D31 | 核验更正、报告和复核边界 |
+| D32 | M4：独立管理员与有界治理入口 |
+| D33 | M4：删除业务图、缓存归属和清除完成 |
+| D34 | M4：保留期快照、签名预览与部署任务 |
+| D35 | M4：eval、可访问性与验证边界 |
+| D36 | M5：隔离生产验收与真实设备边界 |
+| D37 | M5：可选本地电平打断 |
+| D38 | M5：最小可用运行指标 |
+| D39 | Python后端全量迁移（用户明确选择FastAPI） |
+| D40 | 数据兼容、SQLite降级与历史隔离 |
+| D41 | 启动、部署与验证边界 |
+| D42 | 阶段0实测与阶段1访问端口 |
+| D43 | JSONB边界的一致性 |
+| D44 | 已有本地Whisper加载与调用 |
+| D45 | 可选Edge题目播报，外网默认关闭 |
+| D46 | 本地文件STT与隔离TTS便捷入口 |
+| D47 | Python3.11最低版本与隔离补包 |
+| D48 | 用户授权文件的直接Whisper手工验收 |
+| D49 | 面试官聊天封装与内存CLI原型 |
+| D50 | 本地音频与文字混合面试CLI |
+| D51 | 返工 R-voice-01 |
+| D52 | 独立后端的网页语音联调 |
+| D53 | 语音资产与启动命令不再引用原仓库目录 |
+| D54 | 语音资产的相对路径以仓库根为准 |
+| D55 | 使用独立的 Python 3.11 第三方包环境 |
+| D56 | 独立的本机练习对话 API |
+| D57 | 轻量练习页与浏览器联调 |
+| D58 | 招聘网页与 FastAPI 共用仓库 |
+| D59 | 裁剪 Node 锁文件并统一验证 |
+| D60 | 招聘工作台在目标仓库完成联调 |
+| D61 | 正式文字面试和管理员查询 |
+| D62 | 正式文字面试网页与验证 |
+| D63 | 公网生产启动与角色访问码 |
+| D64 | 工作台账号和密码登录 |
+| D65 | 正式面试固定题单和硬性资格 |
+| D66 | 飞书应用接入骨架与后端端口 |
+| D67 | SQLite 迁移链与 Postgres 语义对齐 |
+| D68 | Task 1 结论复核：parity 范围与方言差影响评估 |
+| D69 | 路由模块化拆分（纯重构） |
+| D70 | 事件溯源 interview_events（Task 3） |
+| D71 | AI Gateway：路由 / 熔断 / 降级与计量（Task 5） |
+| D72 | 多租户与 RLS（Task 4） |
+| D73 | Task 6a：Gateway Protocol 保持双轨 C（async 表面 / sync 实现） |
+| D74 | Task 6a：每面试仅一个活动写 WS；重连顶替旧连接 |
+| D75 | Task 6b 协议字段补齐：text_input / audio_chunk |
+| D76 | Task 6b：实时 pipeline / VAD / 打断 |
+| D77 | Task 7：防作弊信号与 riskItems |
+| D78 | Task 8a：运维基础设施（compose / Celery / sticky WS） |
+| D79 | Task 8b：收尾备忘结论与索引 |
+| D80 | Task 9a：视频语音面试（帧传输与前端渲染） |
+| D81 | Task 9b：多模态防作弊架构与 VisionDetector 抽象 |
+
 ## D17 本轮基于已有仓库核验 M0/M1
 
 **状态**：本轮实施（2026-11-02）
@@ -1056,7 +1144,7 @@ Docker 等价思路：起一次性 Postgres 容器，设 `TEST_DATABASE_URL`/`DA
 | VAD 误触发升级（D76） | **记录为后续**。 |
 | Compose 实起（D78→8b） | **已解决**：见上表；证据 commit `271a7a1` / workflow `Compose smoke`。 |
 
-### Task 1–8 决策索引（D67–D79）
+### Task 1–9 交付阶段索引（D67–D81）
 
 | D | Task / 主题 |
 | --- | --- |
@@ -1074,9 +1162,9 @@ Docker 等价思路：起一次性 Postgres 容器，设 `TEST_DATABASE_URL`/`DA
 | D78 | Task 8a compose/Celery/sticky |
 | D79 | Task 8b 收尾备忘（本条） |
 | D80 | Task 9a 视频语音面试帧传输 |
-| D81 | Task 9b 多模态防作弊与状态协同 |
+| D81 | Task 9b 多模态防作弊与 VisionDetector |
 
-编号连续：D67→D81 无跳号、无重复。Task 1–9 均有对应 D 条目（Task 顺序与 D 编号不完全同序：Gateway D71 早于租户 D72，以交付顺序为准）。
+编号连续：D1–D81 与 D67→D81 均无跳号、无重复（全量索引见文首）。Task 1–9 均有对应 D 条目（Task 顺序与 D 编号不完全同序：Gateway D71 早于租户 D72，以交付顺序为准）。
 
 ## D80 Task 9a：视频语音面试（帧传输与前端渲染）
 
@@ -1096,7 +1184,7 @@ Docker 等价思路：起一次性 Postgres 容器，设 `TEST_DATABASE_URL`/`DA
 
 **已知限制**：非 WebRTC，带宽与清晰度有限；数字人口型驱动未做；帧不落 durable blob；生产需另定保留期与删除策略。
 
-## D81 Task 9b：多模态防作弊与状态协同
+## D81 Task 9b：多模态防作弊架构与 VisionDetector 抽象
 
 **状态**：已落地（Task 9b）
 
@@ -1104,11 +1192,13 @@ Docker 等价思路：起一次性 Postgres 容器，设 `TEST_DATABASE_URL`/`DA
 
 **设计源**：`docs/ai-interviewer-architecture.md` §防作弊 / 过程信号；实现以本决策为准。
 
-**视觉检测**：抽象 `VisionDetector`；CI/缺依赖用 `FakeVisionDetector`；可选 `OpenCvHaarVisionDetector`（Haar Cascade，无 torch）。在 `handle_video_chunk` 对最新帧 `observe` 后立即丢弃字节。阈值：`no_face` ≥10s、`multi_face` ≥3s → `proctor_logs`；`camera_stall` ≥10s 无帧 → log + `state_changed`。
+**架构**：多模态防作弊 = 客户端过程信号（切屏/失焦/摄像头丢失）+ 服务端音频派生（静音/音量）+ 服务端视觉观察（最新帧）。统一写入 `proctor_logs`，由 `score_proctor_risks` 融合为报告 `riskItems`；**永不**进入评分证据链、**永不**自动录用/淘汰。
+
+**VisionDetector 抽象**：接口 `VisionDetector.observe(frame, image_format) → VisionObservation`。CI / 缺依赖用确定性 `FakeVisionDetector`；生产可选 `OpenCvHaarVisionDetector`（Haar Cascade）。**不**引入 torch 等重度 DL。在 `handle_video_chunk` 对最新帧 `observe` 后立即丢弃字节（与 D80 背压策略一致）。阈值：`no_face` ≥10s、`multi_face` ≥3s → `proctor_logs`；`camera_stall` ≥10s 无帧 → log + `state_changed`。
 
 **信号扩展**：`proctor_logs.signal_type` 增补 `no_face` / `multi_face` / `camera_stall` / `camera_lost`（PG `0016`、SQLite `0009` 重建 CHECK）。
 
-**融合评分**：`score_proctor_risks` 将视觉信号与切屏/过快等音频侧信号合并为 `riskItems`（`no_face_detected` / `multi_face_detected` / `camera_feed_interrupted` 等）；一律 `affectsScore=false`，仅供人工复核。
+**融合评分**：视觉信号与切屏/过快等合并为 `riskItems`（`no_face_detected` / `multi_face_detected` / `camera_feed_interrupted` 等）；一律 `affectsScore=false`，仅供人工复核。
 
 **前端协同**：`visibilitychange` / `blur` → `proctor_signal`；`MediaStream` track `ended` → `camera_lost`；WS 重连后若无流则重新 `getUserMedia`。
 
