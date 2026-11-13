@@ -1,4 +1,5 @@
 # Task 8a / 8b: real docker compose up evidence (GitHub-hosted runners have Docker).
+# Path-filtered so routine Python-only pushes skip Docker; use workflow_dispatch to force a run.
 name: Compose smoke
 
 on:
