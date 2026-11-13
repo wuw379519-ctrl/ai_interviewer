@@ -38,6 +38,8 @@ run_migrate() {
   python -c "
 import os, psycopg
 with psycopg.connect(os.environ['PG_WAIT_URL']) as conn:
+    # CREATE needed so app lifespan can re-run migrate (CREATE TABLE IF NOT EXISTS __migrations).
+    conn.execute('GRANT USAGE, CREATE ON SCHEMA public TO aii_app')
     conn.execute('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO aii_app')
     conn.execute('GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO aii_app')
     conn.commit()

@@ -61,10 +61,11 @@ jobs:
             echo "===== worker logs ====="
             docker compose -f infra/docker-compose.yml logs worker --no-color --tail=80 || true
           } | tee compose-failure.txt
-          # Keep failure context in the step log; only mark the last lines as errors.
-          tail -n 40 compose-failure.txt | while IFS= read -r line; do
-            echo "::error::compose $line"
-          done || true
+          # Prefer traceback / error lines in annotations (visible on Actions summary).
+          grep -E "Error|Exception|Traceback|NOT_READY|postgres_|api_ready|dependency|exit" compose-failure.txt \
+            | tail -n 60 \
+            | while IFS= read -r line; do echo "::error::compose $line"; done || true
+          tail -n 20 compose-failure.txt | while IFS= read -r line; do echo "::warning::compose $line"; done || true
       - name: Wait for api /api/ready
         run: |
           set -e
