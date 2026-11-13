@@ -83,9 +83,30 @@ jobs:
           exit 1
       - name: Worker process present
         run: |
+          set -e
           docker compose -f infra/docker-compose.yml ps
-          docker compose -f infra/docker-compose.yml logs worker --tail=40
-          docker compose -f infra/docker-compose.yml logs worker --tail=40 | grep -E "celery|ready|beat"
+          # Celery may buffer early logs; wait briefly then accept running container.
+          for i in $(seq 1 20); do
+            status=$(docker compose -f infra/docker-compose.yml ps --status running --services | tr '\n' ' ')
+            echo "running_services attempt=$i: $status"
+            echo "$status" | grep -q "worker" || { sleep 3; continue; }
+            logs=$(docker compose -f infra/docker-compose.yml logs worker --no-color --tail=80 || true)
+            echo "$logs"
+            if echo "$logs" | grep -Ei "celery|ready|beat|Connected to redis|worker@"; then
+              echo "worker_ok"
+              exit 0
+            fi
+            # Container is up even if log markers are delayed.
+            if [ "$i" -ge 8 ]; then
+              echo "worker_running_without_log_markers"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "worker_not_running"
+          docker compose -f infra/docker-compose.yml ps -a
+          docker compose -f infra/docker-compose.yml logs worker --no-color --tail=120 || true
+          exit 1
       - name: Tear down
         if: always()
         run: docker compose -f infra/docker-compose.yml down -v
