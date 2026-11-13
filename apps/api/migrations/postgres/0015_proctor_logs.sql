@@ -1,7 +1,8 @@
+-- tenant_id must be TEXT to match tenants.id (0013); UUID breaks the FK on Postgres.
 CREATE TABLE IF NOT EXISTS proctor_logs (
     id UUID PRIMARY KEY NOT NULL,
     interview_id UUID NOT NULL REFERENCES interviews (id) ON DELETE CASCADE,
-    tenant_id UUID NOT NULL REFERENCES tenants (id),
+    tenant_id TEXT NOT NULL REFERENCES tenants (id),
     signal_type TEXT NOT NULL,
     payload JSONB NOT NULL DEFAULT '{}'::jsonb,
     ts TIMESTAMPTZ NOT NULL DEFAULT now(),

@@ -70,11 +70,12 @@ services:
       timeout: 5s
       retries: 12
       start_period: 40s
+    # Wait for TCP-ready Postgres beyond healthcheck, then migrate, then serve.
     command:
       [
         "sh",
         "-c",
-        "python -m interviewer.cli migrate && python -m uvicorn interviewer.main:app --host 0.0.0.0 --port 8000 --no-access-log",
+        "set -e; i=0; until python -c \"import os,psycopg; u=os.environ['DATABASE_URL'].replace('postgresql+psycopg://','postgresql://',1); psycopg.connect(u).close()\"; do i=$$((i+1)); if [ $$i -ge 30 ]; then echo 'postgres_connect_timeout'; exit 1; fi; sleep 1; done; python -m interviewer.cli migrate; exec python -m uvicorn interviewer.main:app --host 0.0.0.0 --port 8000 --no-access-log",
       ]
 
   worker:

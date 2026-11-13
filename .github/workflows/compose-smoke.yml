@@ -7,6 +7,8 @@ on:
     paths:
       - "infra/**"
       - "apps/api/Dockerfile"
+      - "apps/api/migrations/**"
+      - "apps/api/interviewer/**"
       - "apps/api/requirements.txt"
       - "apps/api/requirements.lock"
       - ".github/workflows/compose-smoke.yml"
@@ -14,6 +16,8 @@ on:
     paths:
       - "infra/**"
       - "apps/api/Dockerfile"
+      - "apps/api/migrations/**"
+      - "apps/api/interviewer/**"
       - "apps/api/requirements.txt"
       - "apps/api/requirements.lock"
       - ".github/workflows/compose-smoke.yml"
@@ -31,7 +35,15 @@ jobs:
       - name: Offline compose structure gate
         run: python infra/compose.validate.py
       - name: Build and start stack
-        run: docker compose -f infra/docker-compose.yml up --build -d
+        run: |
+          set -e
+          docker compose -f infra/docker-compose.yml up --build -d
+          docker compose -f infra/docker-compose.yml ps
+      - name: Dump api logs if stack failed
+        if: failure()
+        run: |
+          docker compose -f infra/docker-compose.yml ps -a || true
+          docker compose -f infra/docker-compose.yml logs api --tail=200 || true
       - name: Wait for api /api/ready
         run: |
           set -e
@@ -44,8 +56,8 @@ jobs:
             sleep 3
           done
           echo "api_ready_timeout"
-          docker compose -f infra/docker-compose.yml ps
-          docker compose -f infra/docker-compose.yml logs api --tail=80
+          docker compose -f infra/docker-compose.yml ps -a
+          docker compose -f infra/docker-compose.yml logs api --tail=200
           exit 1
       - name: Worker process present
         run: |
